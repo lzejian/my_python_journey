@@ -76,6 +76,21 @@ git
 # git add并非是单纯的添加，而是把工作区的内容记录下来，就像打扫屋子我撕了一张海报detele或者搬走一台显示器modify，他会在提交前记录一下这个行为。
 # git的核心思想是track changes，所以即使是删除文件也需要记录行为并commit。
 
+"""
+字符串格式化
+"""
+# 字符串格式化并非真的格式化，而是另一种拼接方式，形为："%s" %(变量)
+# %s为占位置，%（变量）就是把变量存储的内容替换到刚刚的占的位置，多个变量依次排列。
+# 常用占位符:%s,%d,%f.分别为字符串，整形，浮点型。
+
+# 例：通过占位符完成数字和整形，字符串的拼接
+company = "amazon"
+set_up_year = 1994
+stock_price = 219.93
+message = "%s,which is founded in %d with a stock price of %f." %(company,set_up_year,stock_price)
+print(message)
+
+# 总结，感觉不如print(f"变量")来的容易，还是用f-string更直接。
 
 
 
