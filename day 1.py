@@ -89,10 +89,38 @@ set_up_year = 1994
 stock_price = 219.93
 message = "%s,which is founded in %d with a stock price of %f." %(company,set_up_year,stock_price)
 print(message)
+print(f"{company},which is founded in {set_up_year} with a price a of {stock_price:.2f}")
 
 # 总结，感觉不如print(f"变量")来的容易，还是用f-string更直接。
+# .2f为精度控制保留小数点两位，自动四舍五入，用法是{变量:.2f}。.2%为百分比。
+# 10.2f为219.93这个6位字符加上4个空格单位，一般用来对齐。
+
+# 练习
+name = "amazon"
+stock_price = 219.93
+stock_price_daidy_growth_factor = 1.1
+growth_day = 7
+final_stock_price = stock_price * stock_price_daidy_growth_factor ** growth_day
+
+print(f"公司:{name},股价为{stock_price},每日增长系数是{stock_price_daidy_growth_factor},当经过了{growth_day}后，股价为{final_stock_price:.2f}")
 
 
+"""
+input语句
+获取键盘的输入信息
+"""
+name = input("请告诉我你的身份") # input（）里面自带print的功能
+print(f"わかった、あなたは{name}")
+
+# 输入数字类型
+num = input("你的银行卡密码是：")
+
+# 输出类型
+print(f"你的银行卡类型是{type(num)}") # input输出的类型永远是str，但可以通过变更变量类型来改变。
+
+# 改变类型
+num = int(num)
+print(f"你的银行卡类型是{type(num)}") # 你的银行卡类型是<class 'int'>
 
 
 
