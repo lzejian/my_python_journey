@@ -149,6 +149,7 @@ print(f"你的银行卡类型是{type(num)}") # 你的银行卡类型是<class '
 # num1= 10
 # num2= 5
 # print(f"num1 != num2的结果是{num1 != num2}")
+# 比较运算符的结果就是布尔类型的True和Flase
 
 # 20
 
