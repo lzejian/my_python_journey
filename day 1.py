@@ -124,21 +124,12 @@ print(f"你的银行卡类型是{type(num)}") # 你的银行卡类型是<class '
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-# bool_1 = True
-# bool_2 = False
-# print(f"bool的字面量有:{bool_1}和{bool_2}。它们的类型分别是{type(bool_1)}和{type(bool_2)}")
+"""
+布尔类型，数字类型中的一种，一共有整数型，浮点型，复数型，布尔型4种。
+"""
+bool_1 = True
+bool_2 = False
+print(f"bool的字面量有:{bool_1}和{bool_2}。它们的类型分别是{type(bool_1)}和{type(bool_2)}")
 
 
 # 比较运算符
@@ -151,17 +142,20 @@ print(f"你的银行卡类型是{type(num)}") # 你的银行卡类型是<class '
 # print(f"num1 != num2的结果是{num1 != num2}")
 # 比较运算符的结果就是布尔类型的True和Flase
 
-# 20
+"""
+if else判断使用
+"""
 
 
-# print("欢迎来到黑马儿童游乐场，儿童免费，成人收费")
-# age = input("请输入你的年龄：")
-# print(f"{age}岁")
-# if int(age) >= 18:
-#     print("你已经成年了，需要补票10元")
-# else:
-#     print("你还是个孩子，可以免费游玩")
-# print("助您玩的愉快")
+print("欢迎来到黑马儿童游乐场，儿童免费，成人收费")
+age = input("请输入你的年龄：")
+print(f"{age}岁")
+# 需要把age变为整数类型，input输出的内容默认是字符串。
+if int(age) >= 18:
+    print("你已经成年了，需要补票10元")
+else:
+    print("你还是个孩子，可以免费游玩")
+print("助您玩的愉快")
 
 
 # print("欢迎来到黑马动物园。")
@@ -175,14 +169,14 @@ print(f"你的银行卡类型是{type(num)}") # 你的银行卡类型是<class '
 
 # if elif else语句
 
-# if int(input("请输入你想的数字：")) == 10:
-#     print("你猜对啦！")
-# elif int(input("不对你猜错了，再猜一次：")) == 10:
-#     print("你猜对啦！可以的")
-# elif int(input("不对你猜错了，再猜最后一次：")) == 10:
-#      print("你猜对啦！还行吧")
-# else:
-#     print("你真笨，三次都没猜对！答案是10")
+if int(input("请输入你想的数字：")) == 10:
+    print("你猜对啦！")
+elif int(input("不对你猜错了，再猜一次：")) == 10:
+    print("你猜对啦！可以的")
+elif int(input("不对你猜错了，再猜最后一次：")) == 10:
+     print("你猜对啦！还行吧")
+else:
+    print("你真笨，三次都没猜对！答案是10")
 
 # 
 # name = input("请输入你的名字:")
