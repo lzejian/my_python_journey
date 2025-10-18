@@ -178,6 +178,127 @@ elif int(input("不对你猜错了，再猜最后一次：")) == 10:
 else:
     print("你真笨，三次都没猜对！答案是10")
 
-# 
-# name = input("请输入你的名字:")
-# print(f"{name}")
+"""
+判断语句的嵌套
+"""
+if int(input("请输入你的身高（cm）")) >= 120 :
+    print("你的身高大于120cm，不符合免费标准，请输入您的vip等级获取免费资格")
+    if int(input("请输入你的VIP等级(1-5)")) >= 3:
+        print("你的VIP等级大于2,可以免费游玩")
+    else:
+        print("您的VIP等级小于3,请买票10元")
+else:
+    print("您的身高符合免费标准，可以免费游玩")
+
+# if 嵌套语句适用于同时满足多种情况之下，即B在A发生条件下发生，而elif则是A或B发生一个的情况下。
+
+"""
+演示判断语句的实战案例 --猜数字
+"""
+
+# 第一次的错误答案，因为A或B都会执行，所以我的input重复了两次。
+
+import random
+num = random.randint(1,10)
+if int(input("请输入你猜的数字1-10")) > num :
+    print("不好意思,你猜的数字大了")
+    if int(input("请再次输入你猜的数字1-10")) > num:
+        print("不好意思,你猜的数字还是大了")
+        if int(input("请最后一次输入你猜的数字1-10")) == num:
+            print(f"bingo就是{num},最后一次猜对了。")
+        else:
+            print("很可惜最后还是没有猜对")
+    elif int(input("请再次输入你猜的数字1-10")) < num:
+        print("不好意思,你猜的数字小了")
+        if int(input("请再次输入你猜的数字1-10")) == num:
+            print(f"bingo就是{num},最后一次猜对了。")
+    else:
+        print(f"是的就是{num},第二次猜中了")
+elif int(input("请输入你猜的数字1-10")) < num :
+    print("不好意思,你猜的数字小了")
+    if int(input("请再次输入你猜的数字1-10")) > num:
+        print("不好意思,你猜的数字大了")
+        if int(input("请最后一次输入你猜的数字1-10")) == num:
+            print(f"bingo就是{num},最后一次猜对了。")
+        else:
+            print("很可惜最后还是没有猜对")
+    elif int(input("请再次输入你猜的数字1-10")) < num:
+        print("不好意思,你猜的数字还是小了")
+        if int(input("请再次输入你猜的数字1-10")) == num:
+            print(f"bingo就是{num},最后一次猜对了。")
+    else:
+        print(f"是的就是{num},第二次猜中了")
+else:
+    print(f"真厉害一次就猜中了，答案就是{num}")
+
+# 我的答案，但是写的麻烦了。
+
+import random
+num = random.randint(1,10)
+guess_number = int(input("请输入你猜的数字1-10"))
+if guess_number > num :
+    print("不好意思,你猜的数字大了")
+    guess_number = int(input("请再次输入你猜的数字1-10"))
+    if guess_number > num:
+        print("不好意思,你猜的数字还是大了")
+        guess_number = int(input("请最后一次输入你猜的数字1-10"))
+        if guess_number == num:
+            print(f"bingo就是{num},最后一次猜对了。")
+        else:
+            print("很可惜最后还是没有猜对")
+    elif guess_number < num:
+        print("不好意思,你猜的数字小了")
+        guess_number = int(input("请最后一次输入你猜的数字1-10"))
+        if guess_number == num:
+            print(f"bingo就是{num},最后一次猜对了。")
+        else:
+            print("很可惜最后还是没有猜对")
+    else:
+        print(f"是的就是{num},第二次猜中了")
+elif guess_number < num :
+    print("不好意思,你猜的数字小了")
+    guess_number = int(input("请再次输入你猜的数字1-10"))
+    if guess_number > num:
+        print("不好意思,你猜的数字大了")
+        guess_number = int(input("请最后一次输入你猜的数字1-10"))
+        if guess_number == num:
+            print(f"bingo就是{num},最后一次猜对了。")
+        else:
+            print("很可惜最后还是没有猜对")
+    elif guess_number  < num:
+        print("不好意思,你猜的数字还是小了")
+        guess_number = int(input("请再次输入你猜的数字1-10"))
+        if guess_number == num:
+            print(f"bingo就是{num},最后一次猜对了。")
+        else:
+            print("很可惜最后还是没有猜对")
+    else:
+        print(f"是的就是{num},第二次猜中了")
+else:
+    print(f"真厉害一次就猜中了，答案就是{num}")
+
+# 标准答案
+import random
+num = random.randint(1,10)
+guess_number = int(input("请输入你猜测的数字(1-10)"))
+
+if guess_number == num:
+    print("真厉害一次就猜中了")
+else:
+    if guess_number < num:
+        print("你猜的数字小了")
+    else:
+        print("你猜的数字大了")
+    guess_number = int(input("请再次输入你猜测的数字(1-10)"))
+    if guess_number == num:
+           print("第二次猜中了！")
+    else:
+        if guess_number < num:
+            print("你猜的数字小了")
+        else:
+            print("你猜的数字大了")
+        guess_number = int(input("请最后一次输入你猜测的数字(1-10)"))
+        if guess_number == num:
+            print("最后一次可算猜中了。")
+        else:
+            print("没机会了三次都猜中。")
