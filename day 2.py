@@ -143,7 +143,19 @@ i = 1
 for i in range(10):
     print(i)
 
-    
+######################################
+
+"""
+for循环的嵌套演示
+"""
+# 设置一个变量，为了最后的print输出符合规范
+total_days = 100
+for i in range(1,total_days + 1):
+    print(f"今天是喜欢小美的第{i}天")
+    for j in range(1,11):
+        print(f"送小美{j}朵玫瑰")
+    print(f"第{i}天表白结束")
+print(f"总共表白{total_days}天，表白成功")    
 
 
        
