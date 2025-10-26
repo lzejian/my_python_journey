@@ -155,8 +155,100 @@ for i in range(1,total_days + 1):
     for j in range(1,11):
         print(f"送小美{j}朵玫瑰")
     print(f"第{i}天表白结束")
-print(f"总共表白{total_days}天，表白成功")    
+print(f"总共表白{total_days}天，表白成功")
 
+##############################################
 
+"""
+for循环--99乘法表
+"""   
+i = 1
+j = 1
+# 设置外层循环，使行数为9
+for i in range(1,10):
+    #* 设置内层循环，让该行的数字和小于该行的整数每个都乘一遍。所以是 num <= i!!!!!!
+    for j in range(1,i+1):
+        print(f"{i}* {j} = {i * j}",end = "\t")
+    print()
+    
+#############################################
+"""
+continue and break --语法与嵌套
+"""
+# continue的作用就是不执行下方的代码，但不影响循环。
+for i in range(1,6):
+    print("皇马")
+    continue
+    print("巴萨")
+# break的作用是中止所在循坏。
+for i in range(1,6):
+    print("皇马")
+    break
+    print("巴萨")
+# continue 嵌套
+for i in range(1,6):
+    print("皇家马德里")
+    for x in range(1,6):
+        print("巴塞罗那")
+        continue
+        print("拜仁慕尼黑")
+    print("国际米兰")
+# break 嵌套
+for i in range(1,6):
+    print("皇家马德里")
+    for x in range(1,6):
+        print("巴塞罗那")
+        break
+        print("拜仁慕尼黑")
+    print("国际米兰")
+#* 总结，continue 和 break都是只作用于位置所在的循环，无法影响到外层循环。
+#* 区别CON是终止下方的语句，break是终止所在循环。
        
+############################################
+"""
+练习案例--发工资
+"""
+# 某公司账户余额1w，给20名员工发工资
+# 员工编号1-20，按顺序领取，每人1000
+# 领工资时，按绩效分数（随机生成）1-10分领取，小于5分不领取，跳过该员工。
+# 工资发完结束就不发了。
+# 我的答案
+import random
+salary = 10000
+i = 1
+for i in range(1,21):
+    num = random.randint(1,10)
+    if salary == 0:
+        print("工资发完了，请下个月再领取。")
+        break
+    else:
+        if num < 5:
+            print(f"员工{i},绩效分{num},低于5,不发工资，下一位")
+        else:
+            print(f"向员工{i}发放工资1000元,账户余额还剩{salary-1000}")
+            salary -= 1000
+
+# 标准答案（更好）
+import random
+money = 10000
+for i in range(1,21):
+    # 设置随机数字，如果在外部那就会在循环内固定循环数字。
+    num = random.randint(1,10)
+    # 小于5则continue终止此次循环，直接进入下一次循环
+    if num < 5:
+        print(f"员工{i},绩效分{num},低于5,不发工资，下一位")
+        continue
+    if money >= 1000:
+        money -= 1000
+        print(f"向员工{i}发放工资1000元,账户余额还剩{money}")
+    else:
+        print("工资发完了，请下个月再领取。")
+        break
+#* 代码的层级越少越简洁，并且也要随时应对突然的变故。
+#* 我的代码美中不足是ifelse用了两层，并且salary == 0仅在salary为1000的倍数时有效，万一多个500就不管用了。
+
+        
+        
+        
+    
     
