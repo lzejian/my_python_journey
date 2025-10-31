@@ -66,3 +66,142 @@ if not result:
 
 # none也可以用于存储空的值
 name = None
+
+########################################
+"""
+演示对函数进行文档说明---规范美观
+"""
+# 定义函数，进行文档说明
+def add(x,y):
+    """
+    1.add函数是两个参数相加的函数。
+    2.param x:用来存放第一个函数的参数
+      param y:用来存放第二个函数的参数
+    3.:return:函数返回值的说明
+    """
+    # 函数体
+    result = x + y
+    return result
+add(5,6)
+
+###############################
+"""
+演示函数的嵌套调用
+"""
+# 定义一个准备嵌套的函数f2
+def function_2():
+    print("-----2-----")
+# 定义一个被嵌套的函数f1
+def function_1():
+    print("-----1-----")
+    function_2()
+    print("-----3-----")
+function_1()
+# 调用f_1，先输出f_1的内容，再调用f_2，有逻辑的一个一个来。
+
+#######################################
+
+"""
+函数中变量的作用域
+"""
+# 局部变量
+def test_1():
+    num = 100
+    print(f"{num}")
+test_1()
+print(f"{num}")
+# 局部变量就是只在函数内生效，出去就失效的变量。
+
+# 全局变量
+num = 200
+def test_2():
+    print(num)
+def test_3():
+    print(num)
+test_2()
+test_3()
+print(num)
+# 全局变量设置在函数外，函数随意使用后出去也是可以使用。
+
+# global关键字，把局部变为全局变量
+num = 100
+def test_4():
+    if num > 100:
+        return "pass"
+    else:
+        return None
+def test_5():
+    global num
+    num = 5000
+    print(num)
+test_5()
+r = test_4()
+if not r:
+    print("reject")
+else:
+    print("okpass")
+#* 程序是自上向下走的，并非我设置了一个global，最开始的global就变成了5000，谨记！！！
+
+########################################
+"""
+综合案例 ---ATM机
+"""
+
+money = 5000000
+flag = True
+def main_menu():
+    print("-----------主菜单--------------")
+    print(f"您好,{name},欢迎来到银行ATM,请选择操作")
+    print(f"查询余额\t[输入1]")
+    print(f"存款\t[输入2]")
+    print(f"取款\t[输入3]")
+    print(f"退出\t[输入4]")
+    num = int(input("请输入您的选择:"))
+    return num
+def check_balance():
+    print(f"您的余额还剩{money}")
+def deposit():
+    x = int(input("请输入您想存的金额数量:"))
+    global money
+    money += x
+    print(f"您的余额还剩{money}元")
+def withdraw():
+    global money
+    #* global如果有多个相同变量，那么它必须放在第一个相同变量前！这是python的规则。
+    y = int(input("请输入您想取的金额数量:"))
+    if money - y < 0:
+        print("您取的金额大于存储金额，请重试")
+    else:
+        money -= y
+        print(f"您的余额还剩{money}元")
+def exit_program():
+    print(f"好的，程序将会退出。")
+# 函数定义完成开始写循环条件
+name = input("请输入你的姓名:")
+while flag:
+    num = main_menu()
+    if num == 1:
+        check_balance()
+        continue
+    if num == 2:
+        deposit()
+        continue
+    if num == 3:
+        withdraw()
+        continue
+    if num == 4:
+        exit_program()
+        break
+    else:
+        print("输入结果错误，程序将退出。")
+        break
+    
+
+
+
+
+    
+
+
+
+
