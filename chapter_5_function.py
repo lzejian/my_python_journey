@@ -146,7 +146,7 @@ else:
 """
 综合案例 ---ATM机
 """
-
+# 我的答案
 money = 5000000
 flag = True
 def main_menu():
@@ -196,7 +196,70 @@ while flag:
         print("输入结果错误，程序将退出。")
         break
     
-
+# 标准答案
+# 定义全局变量money
+money = 5000000
+name = None
+flag = True
+# 要求客户输入姓名
+name = input("这是银行ATM机,请输入你的姓名")
+# 定义查询函数
+def check_balance(show_header):
+    if show_header:
+        print("------查询余额-----")
+    print(f"您的余额还剩{money}元")
+# 定义取款函数
+def withdraw(num):
+    global money
+    money -= num
+    if money < 0:
+        print("------取款------")
+        print("您的余额不足，请重试")
+    else:
+        print("------取款------")
+        print(f"您已取出{num}元")
+        check_balance(False)
+# 定义存款函数
+def deposit(num):
+    global money
+    money += num
+    print("------取款------")
+    check_balance(False)
+# 定义主菜单
+def main_menu():
+    print("-----------主菜单--------------")
+    print(f"您好,{name},欢迎来到银行ATM,请选择操作")
+    print(f"查询余额\t[输入1]")
+    print(f"存款\t\t[输入2]")
+    print(f"取款\t\t[输入3]")
+    print(f"退出\t\t[输入4]")
+    return int(input("请输入您的选择:"))
+def exit_program():
+    print(f"好的，程序将会退出。")
+while flag:
+    keyboard_input = main_menu()
+    # 按F2可以一键修改所有相同的变量
+    if keyboard_input == 1:
+        # 调用实际参数时因为函数里有if
+        check_balance(True)
+        #* 这里的包括下方的continue都可以删除掉，不影响程序运行，因为if... elif.. else..语句就是任选其一执行的意思！
+        continue
+    elif keyboard_input == 2:
+        num = int(input("请输入你想存储的金额"))
+        deposit(num)
+        continue
+    elif keyboard_input == 3:
+        num = int(input("请输入你想取出的金额"))
+        withdraw(num)
+        continue
+    elif keyboard_input == 4:
+        exit_program()
+        break
+    else:
+        print("输入结果错误，程序将退出。")
+        break   
+    
+    
 
 
 
