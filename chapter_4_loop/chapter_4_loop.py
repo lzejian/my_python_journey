@@ -138,7 +138,7 @@ for x in range(10):
 python里for循环临时变量的作用域
 """
 # 我赋予了i = 1的值，i是个变量
-i = 1
+i = 100
 # i被强制赋予了值！它在下一个语句里被强制赋予了range(10)的数字，相当于告诉编译器i = 0！！
 for i in range(10):
     print(i)
