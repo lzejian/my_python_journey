@@ -188,9 +188,9 @@ print(f"年龄所在位置是{index}")
 name = information[0]
 print(f"姓名是{name}")
 # infor2 = del.information[2][0] del只能直接删除，不能用赋值变量
-# infor2 = information[2].pop(0)  选出元组中你想删除的元素，找到列表的下标，然后用pop方法删除
+infor2 = information[2].pop(0) # 选出元组中你想删除的元素，找到列表的下标，然后用pop方法删除
 del information[2][0]
-print(f"兴趣爱好是{information[2][0]}")
+print(f"兴趣爱好是{information}")
 infor3 = information[2].append("coding")  # 选出元组中你想加入的元素，找到列表的下标，然后用append方法添加
 infor3 = information[2].insert(1, "coding")  # 选出元组中你想加入的元素，找到列表的下标，然后用insert方法添加
 print(f"兴趣爱好是{information}")
@@ -209,40 +209,27 @@ print(f"兴趣爱好是{information}")
 my_str = "itheima and itcast"
 # 通过下标索引取值
 value = my_str[2]
-value2 = my_str[-16] # 空格也算是变量
+value2 = my_str[-16]
 print(f"从字符串取下标为2的元素，它的值是{value}，取下标是-16的元素，它的值是{value2}")
 # my_str[2] = "H" 操作不了，因为字符串不可更改
 # index 方法
 my_str = "itheima and itcast"
-value = my_str.index("and i")
+value = my_str.index("and")
 print(f"字符串and的下标索引是{value}") # 字符串and的下标索引是8，因为在itheima对应0123456，7对应空格，8对应and的a，index查找的是子字符串的起始位置。
 # replace 方法
-new_my_str = my_str.replace("it","程序") # 所有的it都换成了程序。
+new_my_str = my_str.replace("it","程序")
 print(f"替换之后是{new_my_str}") # 用这个方法并不代表改变了原来的字符串，只是新增了一个字符串。
 # split 方法
 my_str = "hello python itheima itcast"
 new_my_str = my_str.split(" ") # 参数填你要分割的东西
 print(f"通过split方法分割后的字符串为{new_my_str},它的类型是{type(new_my_str)}") # split分割后会得到一个新的列表！
-#* strip 方法
+# strip 方法
 my_str = " itheima and  itcast "
 new_my_str = my_str.strip()
 print(f"不传参数的字符串得到的是没有前后空格的{new_my_str}")
 my_str = "12itheima and  itcast21"
 new_my_str = my_str.strip("12")
 print(f"传了参数\"12\"的字符串得到的是没有\"12\"的{new_my_str}")  # 删除12时不是按照12顺序，而是两个字符"1""2"来删除前后的字符。
-text_left = "    lzejian"
-text_right = "lzejian    "
-
-#* lstrip() 只管左边
-print(f"lstrip: '{text_left.lstrip()}'")   # 输出: 'lzejian'
-print(f"lstrip: '{text_right.lstrip()}'")  # 输出: 'lzejian    ' (右边不动)
-
-print("---")
-
-#* rstrip() 只管右边
-print(f"rstrip: '{text_left.rstrip()}'")   # 输出: '    lzejian' (左边不动)
-print(f"rstrip: '{text_right.rstrip()}'")  # 输出: 'lzejian'
-
 # 统计字符串某个字符串的出现次数
 my_str = " itheima and  itcast "
 num = my_str.count("t")
