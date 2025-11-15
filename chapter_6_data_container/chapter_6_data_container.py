@@ -30,7 +30,7 @@ print(my_list[23])  # IndexError: list index out of range
 print(my_list[-1])  # True
 # 嵌套索引
 print(my_list2[0])  # [1, 2, 3]
-print(my_list2[0][3])  # 3
+print(my_list2[0][2])  # 3
 #################################################
 """
 list列表的常用方法
@@ -175,7 +175,7 @@ while index < len(t8):
 # 8.元组的不可变性
 # 元组是不可变的，不能修改元组中的元素,但是可以修改元组中的列表元素
 t10 = (1, 2, 3, [4, 5, 6])
-t10[3][0] = 7  # TypeError: 'tuple' object does not support item assignment
+t10[2][0] = 7  # TypeError: 'tuple' object does not support item assignment
 t10[3][0] = "lzejian"
 print(f"修改后的元组是：{t10}")  # 修改后的元组是：(1, 2, 3, [lzejian, 5, 6])
 
@@ -183,8 +183,8 @@ print(f"修改后的元组是：{t10}")  # 修改后的元组是：(1, 2, 3, [lz
 test
 """
 information = ("周杰伦",11,["football","music"])
-age = information.index(11)
-print(f"年龄所在位置是{age}")
+index = information.index(11)
+print(f"年龄所在位置是{index}")
 name = information[0]
 print(f"姓名是{name}")
 # infor2 = del.information[2][0] del只能直接删除，不能用赋值变量
