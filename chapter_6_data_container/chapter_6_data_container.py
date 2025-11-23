@@ -51,9 +51,12 @@ print(mylist)  # ['junjiewu', 'lzejian', 'liyibing', 'cguazhan']
 # 4.在列表的尾部追加单个元素
 mylist.append("lzejian")
 print(mylist)  # ['junjiewu', 'lzejian', 'liyibing', 'cguazhan', 'lzejian']
+#* 确切来说append是把整个箱子一股脑扔进去，不管箱子是什么，比如说一个大的字典。
 # 5.在列表的尾部追加多个元素
 mylist.extend(["uyojiaqi", 666])
 print(mylist)  # ['junjiewu', 'lzejian', 'liyibing', 'cguazhan', 'lzejian', 'uyojiaqi', 666]
+#* extend我虽然添加了一个列表["uyojiaqi", 666]，但是它会把这个"箱子打开"，里面的东西一个一个扔进去
+#* 比如字符串"world"，会扔5个字符串字母进去。
 # 6.删除指定下标索引的元素
 mylist = ["lzejian","liyibing","cguazhan"]
 del mylist[0]
@@ -259,69 +262,10 @@ print(f"替换后的结果是{b_str}")
 c_list = b_str.split("|")
 print(f"修改后的结果是{c_list}") # split就是把所有的符号换成","分割开来，并且变成列表的形式，可以增删。
 
+###############################################
 
 """
-集合（当我们需要一个乱序的，元素不可重复但类型多样的数据存储，就可以使用集合。）
-"""
-# 定义一个集合
-my_set1 = {"传智教育","黑马程序员","IT黑马","传智教育","黑马程序员","IT黑马","传智教育","黑马程序员","IT黑马"}
-my_set2 = set()
-print(f"my_set1输出的内容是{my_set1},它的类型是{type(my_set1)}") # 集合不支持重复元素，并且里面的元素显示都是乱序的，所以也没有下标
-print(f"my_set2输出的内容是{my_set2},它的类型是{type(my_set2)}") # 空集就是set()
-# 添加新元素
-my_set1.add("python")
-print(f"my_set1输出的内容是{my_set1}")
-# 移除元素
-my_set1.remove("python")
-print(f"my_set1输出的内容是{my_set1}")
-# 随机取出一个元素
-# my_set1.pop("黑马程序员") # 错误写法，set.pop不允许加参数
-my_set1.pop()
-print(f"my_set1输出的内容是{my_set1}")
-# 清空集合
-my_set1.clear()
-print(f"my_set1输出的内容是{my_set1}") # 结果是set()，意味着空集没有元素了。
-# 取2个集合的差集
-my_set1 = {1,2,3}
-my_set2 = {1,5,6}
-my_set3 = my_set1.difference(my_set2)
-print(f"my_set3输出的内容是{my_set3}") # 上边的操作比如添加移除，都是对原有的集合改变了元素，但是取差集不会影响到两个元素，所以需要一个变量来接受差集
-# 消除2个集合的差集
-my_set1 = {1,2,3}
-my_set2 = {1,5,6}
-my_set1.difference_update(my_set2)
-print(f"my_set1输出的内容是{my_set1}") # 在1中消除了两个集合的交集元素，并且改变了集合本身，2保持不变。
-print(f"my_set2输出的内容是{my_set2}") # 2保持不变
-# 2个集合合并，并集
-my_set1 = {1,2,3}
-my_set2 = {1,5,6}
-my_set3 = my_set1.union(my_set2)
-print(f"my_set1输出的内容是{my_set1}")
-print(f"my_set2输出的内容是{my_set2}")
-print(f"my_set3输出的内容是{my_set3}") # 并集1和2不变，会并成一个集合所以需要一个变量接收新集合，里面重复的元素自动消失。
-# 统计集合的元素数量
-my_set1 = {"传智教育","黑马程序员","IT黑马","传智教育","黑马程序员","IT黑马","传智教育","黑马程序员","IT黑马"}
-print(f"my_set1的集合元素数量是{len(my_set1)}")
-# 集合的遍历（只有for，因为while需要下标，集合是乱序没有下标）
-my_set1 = {"传智教育","黑马程序员","IT黑马","传智教育","黑马程序员","IT黑马","传智教育","黑马程序员","IT黑马"}
-for element in my_set1:
-    print(f"集合遍历的结果是{element}")
-
-"""
-test（把一个重复列表变成集合）
-"""
-my_list = ["黑马程序员","传智播客","黑马程序员","传智播客","itheima","itcast","itheima","itcast","best"]
-set_empty = set()
-for x in my_list:
-    print(f"通过for循环遍历列表的结果是{x}")
-    set_empty.add(x)
-    # set_new = set_empty.add(x)是错误的写法！！！add函数添加完元素直接返回到原来的集合或列表，即使设置新的变量也无济于事，这是python的固定语法！
-print(f"最终的结果是{set_empty}")
-
-
-
-"""
-演示对序列进行切片操作
+演示对序列进行切片操作---对列表，元组，字符串(因为它们是有序的,序列序列！)
 """
 
 # 对list进行切片，从1开始，从4结束，步长为1
@@ -370,10 +314,75 @@ print(f"结果是{result1}")
 
 my_str = "万过薪月，员序程马黑来，nohtyp学"
 result1 = my_str.split("，")[1].replace("来","")[::-1]
+my_str_1 = my_str[my_str.index("黑"):my_str.index("员") - 1:-1]
 """
 result1 = my_str.split("，")[1].replace("来","")[::-1] ,这些变换都可以在一行完成！
 """
 print(f"结果是{result1}")
+
+##############################################
+
+"""
+集合（当我们需要一个乱序的，元素不可重复但类型多样的数据存储，就可以使用集合。）
+"""
+# 定义一个集合
+my_set1 = {"传智教育","黑马程序员","IT黑马","传智教育","黑马程序员","IT黑马","传智教育","黑马程序员","IT黑马"}
+my_set2 = set()
+print(f"my_set1输出的内容是{my_set1},它的类型是{type(my_set1)}") # 集合不支持重复元素，并且里面的元素显示都是乱序的，所以也没有下标
+print(f"my_set2输出的内容是{my_set2},它的类型是{type(my_set2)}") # 空集就是set()
+# 添加新元素
+my_set1.add("python")
+print(f"my_set1输出的内容是{my_set1}")
+# 移除元素
+my_set1.remove("python")
+print(f"my_set1输出的内容是{my_set1}")
+# 随机取出一个元素
+# my_set1.pop("黑马程序员") # 错误写法，set.pop不允许加参数
+my_set1.pop()
+print(f"my_set1输出的内容是{my_set1}")
+# 清空集合
+my_set1.clear()
+print(f"my_set1输出的内容是{my_set1}") # 结果是set()，意味着空集没有元素了。
+# 取2个集合的差集 ---找到集合1中与集合2不相同的元素
+my_set1 = {1,2,3}
+my_set2 = {1,5,6}
+my_set3 = my_set1.difference(my_set2)
+print(f"my_set3输出的内容是{my_set3}") # 上边的操作比如添加移除，都是对原有的集合改变了元素，但是取差集不会影响到两个元素，所以需要一个变量来接受差集
+# 消除2个集合的差集 ---在集合1中消除两个集合的相同元素，剩下不同元素，结果同上。
+my_set1 = {1,2,3}
+my_set2 = {1,5,6}
+my_set1.difference_update(my_set2)
+print(f"my_set1输出的内容是{my_set1}") # 在1中消除了两个集合的交集元素，并且改变了集合本身，2保持不变。
+print(f"my_set2输出的内容是{my_set2}") # 2保持不变
+# 2个集合合并，并集
+my_set1 = {1,2,3}
+my_set2 = {1,5,6}
+my_set3 = my_set1.union(my_set2)
+print(f"my_set1输出的内容是{my_set1}")
+print(f"my_set2输出的内容是{my_set2}")
+print(f"my_set3输出的内容是{my_set3}") # 并集1和2不变，会并成一个集合所以需要一个变量接收新集合，里面重复的元素自动消失。
+# 统计集合的元素数量
+my_set1 = {"传智教育","黑马程序员","IT黑马","传智教育","黑马程序员","IT黑马","传智教育","黑马程序员","IT黑马"}
+print(f"my_set1的集合元素数量是{len(my_set1)}")
+# 集合的遍历（只有for，因为while需要下标，集合是乱序没有下标）
+my_set1 = {"传智教育","黑马程序员","IT黑马","传智教育","黑马程序员","IT黑马","传智教育","黑马程序员","IT黑马"}
+for element in my_set1:
+    print(f"集合遍历的结果是{element}")
+
+"""
+test（把一个重复列表变成集合）
+"""
+my_list = ["黑马程序员","传智播客","黑马程序员","传智播客","itheima","itcast","itheima","itcast","best"]
+set_empty = set()
+for x in my_list:
+    print(f"通过for循环遍历列表的结果是{x}")
+    set_empty.add(x)
+    # set_new = set_empty.add(x)是错误的写法！！！add函数添加完元素直接返回到原来的集合或列表，即使设置新的变量也无济于事，这是python的固定语法！
+print(f"最终的结果是{set_empty}")
+
+
+
+
 
 """
 演示数据容器字典的定义
@@ -411,6 +420,7 @@ print(f"新增元素后的字典是{my_dict}")
 my_dict["王力宏"] = 4545
 print(f"更新元素后的字典是{my_dict}")
 # 删除元素
+del my_dict["王力宏"]
 score = my_dict.pop("王力宏")
 print(f"删除后的字典是{my_dict}，删除的分数是{score}")
 # 清空元素
@@ -477,23 +487,23 @@ print(f"my_dict的最小元素是{min(my_dict)}")
 print(f"元组容器转列表的结果是：{list(my_tuple)}")
 print(f"字符串容器转列表的结果是：{list(my_str)}")
 print(f"集合容器转列表的结果是：{list(my_set)}")
-print(f"字典容器转列表的结果是：{list(my_dict)}")
+print(f"字典容器转列表的结果是：{list(my_dict)}")  # value值会消失。
 # 类型转换 容器转元组
 print(f"列表容器转元组的结果是：{tuple(my_list)}")
 print(f"字符串容器转元组的结果是：{tuple(my_str)}")
 print(f"集合容器转元组的结果是：{tuple(my_set)}")
-print(f"字典容器转元组的结果是：{tuple(my_dict)}")
+print(f"字典容器转元组的结果是：{tuple(my_dict)}") # value值会消失。
 # 类型转换 容器转字符串 输出的字面量是"[1,2,3,4,5]"这种形式
 print(f"列表容器转字符串的结果是：{str(my_list)}") # 结果是[1,2,3,4,5]
 print(f"元组容器转字符串的结果是：{str(my_tuple)}")
 print(f"集合容器转字符串的结果是：{str(my_set)}")
-print(f"字典容器转字符串的结果是：{str(my_dict)}")
+print(f"字典容器转字符串的结果是：{str(my_dict)}") # 字典容器转字符串的结果是："{'key1': 1, 'key2': 2, 'key3': 3, 'key4': 4, 'key5': 5}"
 # 类型转换 容器转集合
 print(f"列表容器转集合的结果是：{set(my_list)}")
 print(f"字符串容器转集合的结果是：{set(my_tuple)}")
 print(f"集合容器转集合的结果是：{set(my_str)}")
-print(f"字典容器转集合的结果是：{set(my_dict)}")
-# sorted 排序
+print(f"字典容器转集合的结果是：{set(my_dict)}") # value值会消失。
+# sorted 排序 ----排序后变为list了
 my_list = [3,2,1,4,5]
 my_tuple = (5,8,12,456,16)
 my_str = "bfsjzqw"
@@ -503,7 +513,8 @@ print(f"列表容器排序的结果是：{sorted(my_list)}")
 print(f"元组容器排序的结果是：{sorted(my_tuple)}")
 print(f"字符串容器排序的结果是：{sorted(my_str)}")
 print(f"集合容器排序的结果是：{sorted(my_set)}")
-print(f"字典容器排序的结果是：{sorted(my_dict)}")
+print(f"字典容器排序的结果是：{sorted(my_dict)}") # 按照keys来排序，且value值丢失。
+
 
 print(f"列表容器反向排序的结果是：{sorted(my_list,reverse = True)}") # 反向排序的reverse = True在括号里面。
 print(f"元组容器反向排序的结果是：{sorted(my_tuple,reverse = True)}")
@@ -514,7 +525,7 @@ print(f"字典容器反向排序的结果是：{sorted(my_dict,reverse = True)}"
 
 
 """
-演示字符串比大小
+演示字符串比大小----按照ASCII码表比较
 """
 # abd比较abc
 print(f"abd与abc的大小结果是{"abd" > "abc"}")
