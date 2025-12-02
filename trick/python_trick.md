@@ -46,3 +46,54 @@ print("".join(words))     # 输出: "HelloWorld" (无缝拼接，算法题常用
 # ❌ nums = [1, 2, 3] -> "-".join(nums) 报错 TypeError
 # ✅ 解决方案：配合 map() 使用
 #    "-".join(map(str, nums)) -> "1-2-3"
+
+
+--------------------------------------------------------
+
+
+# 对称差集 (Symmetric Difference) --- 取两边的“独家”元素
+s1 = {1, 2, 3}
+s2 = {2, 3, 4}
+
+# 写法 1：使用方法 (Method)
+print(s1.symmetric_difference(s2))  # 输出 {1, 4}
+
+# 写法 2：使用运算符 (Operator) -> 最推荐！🐍
+print(s1 ^ s2)                      # 输出 {1, 4}
+
+# **核心逻辑**
+# 也就是：(A ∪ B) - (A ∩ B) 或者 (A - B) ∪ (B - A)
+# 记忆口诀：两个集合“找不同”。
+# 符号记忆：^ (异或符号)，在计算机里代表“不一样就是 True (1)”。
+
+
+--------------------------------------------------------
+
+# 字符串大小写判断 (Case Checking)
+s_upper = "PYTHON"
+s_lower = "python"
+
+# 4. 判断是否全是大写 🔍
+print(s_upper.isupper())  # 输出: True
+print(s_lower.isupper())  # 输出: False
+
+# 5. 判断是否全是小写 🔍
+print(s_lower.islower())  # 输出: True
+print(s_upper.islower())  # 输出: False
+
+# **核心逻辑**
+# 这些方法返回的是布尔值 (Boolean): True 或 False。
+# 区别记忆：
+# .upper() 是“动作”，把字变大。
+# .isupper() 是“问题”，问是不是大写。
+
+# 6. 大小写互换 (Case Swapping)
+s = "Hi Python"
+print(s.swapcase())   # 输出: "hI pYTHON"
+
+# **核心逻辑**
+# 作用：大写变小写，小写变大写。
+# 场景：专门用于 "Swap Case" 这类题目，一行代码顶十行逻辑！
+# 注意：它也是返回新字符串，不会修改原字符串。
+
+--------------------------------------------------------

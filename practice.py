@@ -17,7 +17,30 @@ print(hash(t))
 
 first = input()
 last = input()
-print(f"Hello {first} {last}! You just delved into python")
+
+my_str = "itheima and 2itcast"
+for item in my_str:
+    print(f"字符串的for循环遍历是{type(item)}")
+
+
+def swap_case(s):
+    l = []
+    for i in s:
+        if i.isupper():
+            i.lower()
+            l.append(i)
+        elif i.islower():
+            i.upper()
+            l.append(i)
+        else:
+            l.append(i)
+        s = "".join(l)           
+    return s
+
+if __name__ == '__main__':
+    s = input()
+    result = swap_case(s)
+    print(result)
 
 
    
