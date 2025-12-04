@@ -27,11 +27,35 @@ DATA_FILE = "gold_strategy_data.json"
 # ====================================================
 
 def send_bark(title, content):
-    url = f"{BARK_URL}{title}/{content}"
+    """
+    发送 Bark 推送 (Pro版)
+    参数说明:
+    - isArchive=1: 强制保存历史记录
+    - group=基金定投: 消息分组，避免通知栏混乱
+    - level=timeSensitive: 时效性通知，确保手表震动
+    """
+    # 这里的 BARK_URL 结尾通常是 /，所以我们拼接参数时要注意
+    # 你的 URL 应该长这样: https://api.day.app/你的key/
+    
+    # 1. 对内容进行 URL 编码 (防止空格、换行符导致发送失败)
+    # 虽然 requests 会自动处理，但为了保险我们用 params 传参
+    
+    params = {
+        "isArchive": "1",           # 🌟 重点：保存历史记录
+        "group": "基金定投",         # 🌟 重点：消息分组
+        "level": "timeSensitive",   # 🌟 重点：强震动提醒
+        # "icon": "https://cdn.icon-icons.com/icons2/1378/PNG/512/chartgraph_92949.png" # (可选) 你甚至可以自定义图标
+    }
+    
+    # 构造完整的请求 URL: base_url + title + / + content
+    # 注意：requests 的 get 方法会自动帮我们把 params 拼接到 URL 后面 (?a=1&b=2)
+    final_url = f"{BARK_URL}{title}/{content}"
+    
     try:
-        requests.get(url)
-    except:
-        pass
+        response = requests.get(final_url, params=params)
+        print("✅ 推送已发送 (含归档&分组参数)")
+    except Exception as e:
+        print(f"❌ 推送失败: {e}")
 
 def load_data():
     if os.path.exists(DATA_FILE):
