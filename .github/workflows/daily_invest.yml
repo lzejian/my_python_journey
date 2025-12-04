@@ -26,10 +26,13 @@ jobs:
       run: pip install akshare requests pandas
 
     - name: 4. 运行纳指策略
-      # 即使报错也要继续跑下一步，防止纳指挂了影响黄金
       continue-on-error: true 
       run: python smart_strategy.py
       
+    # 👇👇👇 新增这一步：强行等待 15 秒 👇👇👇
+    - name: ⏸️ 等待消息推送 (防止手表吞消息)
+      run: sleep 15
+
     - name: 5. 运行黄金策略
       continue-on-error: true
       run: python gold_strategy.py
