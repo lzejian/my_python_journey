@@ -1,2 +1,4 @@
 s = input()
-print(s.isalnum())
+print(any(i.isalnum() for i in s))
+
+
