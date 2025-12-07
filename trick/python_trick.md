@@ -47,6 +47,81 @@ print("".join(words))     # 输出: "HelloWorld" (无缝拼接，算法题常用
 # ✅ 解决方案：配合 map() 使用
 #    "-".join(map(str, nums)) -> "1-2-3"
 
+
+--------------------------------------------------------
+
+
+# 对称差集 (Symmetric Difference) --- 取两边的“独家”元素
+s1 = {1, 2, 3}
+s2 = {2, 3, 4}
+
+# 写法 1：使用方法 (Method)
+print(s1.symmetric_difference(s2))  # 输出 {1, 4}
+
+# 写法 2：使用运算符 (Operator) -> 最推荐！🐍
+print(s1 ^ s2)                      # 输出 {1, 4}
+
+# **核心逻辑**
+# 也就是：(A ∪ B) - (A ∩ B) 或者 (A - B) ∪ (B - A)
+# 记忆口诀：两个集合“找不同”。
+# 符号记忆：^ (异或符号)，在计算机里代表“不一样就是 True (1)”。
+
+
+--------------------------------------------------------
+
+# 字符串大小写判断 (Case Checking)
+s_upper = "PYTHON"
+s_lower = "python"
+
+# 4. 判断是否全是大写 🔍
+print(s_upper.isupper())  # 输出: True
+print(s_lower.isupper())  # 输出: False
+
+# 5. 判断是否全是小写 🔍
+print(s_lower.islower())  # 输出: True
+print(s_upper.islower())  # 输出: False
+
+# **核心逻辑**
+# 这些方法返回的是布尔值 (Boolean): True 或 False。
+# 区别记忆：
+# .upper() 是“动作”，把字变大。
+# .isupper() 是“问题”，问是不是大写。
+
+# 6. 大小写互换 (Case Swapping)
+s = "Hi Python"
+print(s.swapcase())   # 输出: "hI pYTHON"
+
+# **核心逻辑**
+# 作用：大写变小写，小写变大写。
+# 场景：专门用于 "Swap Case" 这类题目，一行代码顶十行逻辑！
+# 注意：它也是返回新字符串，不会修改原字符串。
+
+--------------------------------------------------------
+
+# 逻辑判断函数 --- any() 和 all()
+
+# 1. any() --- 只要有一个 True 就算赢 🥉
+# 场景：检查“是否存在”、“有没有”。
+print(any([False, True, False]))  # -> True
+# 实战：字符串里有没有数字？
+has_digit = any(c.isdigit() for c in s)
+
+# 2. all() --- 必须全都是 True 才算赢 🥇
+# 场景：检查“是否全部符合”、“大家都是”。
+print(all([True, True, True]))    # -> True
+print(all([True, False, True]))   # -> False (有一个老鼠屎就坏了一锅粥)
+# 实战：字符串是不是纯由数字组成？
+all_digits = all(c.isdigit() for c in s)
+
+# **核心逻辑**
+# any:  OR 逻辑 (或者) -> 只要有一个符合。
+# all:  AND 逻辑 (并且) -> 必须全部符合。
+# 它们都有“短路机制”，一旦结果确定就会立刻停止，非常快。
+
+--------------------------------------------------------
+
+
+
 --------------------------------------------------------
 
 # Python 字符串与循环进阶笔记 🚀
