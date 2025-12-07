@@ -120,10 +120,6 @@ all_digits = all(c.isdigit() for c in s)
 
 --------------------------------------------------------
 
-
-
---------------------------------------------------------
-
 # Python 字符串与循环进阶笔记 🚀
 
 ## 1. 换行符 `\n` (Newline)
@@ -183,5 +179,17 @@ all_digits = all(c.isdigit() for c in s)
 * **正向跳跃**：`s[::2]` (每隔 2 个)
 * **倒序全取**：`s[::-1]` (经典倒序)
 * **倒序跳跃**：`s[::-2]` (倒着每隔 2 个)
+
+--------------------------------------------------------
+
+# Assuming we have: list_i (array), set_a, and set_b
+
+# Option 1: Calculate separately and subtract (推荐：逻辑最清晰)
+# (Total Positive) - (Total Negative)
+print(sum(1 for x in list_i if x in set_a) - sum(1 for x in list_i if x in set_b))
+
+# Option 2: Calculate using +1 and -1 (和你的思路一致)
+# (Sum of 1s) + (Sum of -1s)
+print(sum(1 for x in list_i if x in set_a) + sum(-1 for x in list_i if x in set_b))
 
 --------------------------------------------------------
