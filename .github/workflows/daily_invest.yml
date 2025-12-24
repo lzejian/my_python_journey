@@ -1,12 +1,8 @@
-name: 每日基金策略 (含记忆功能)
+name: 每日基金策略 (数据分离版)
 
 on:
   schedule:
-    # 北京时间 14:10 = UTC时间 06:10
-    # 这样就算排队 20 分钟，你也能在 14:30 左右收到，有充足的时间去支付宝操作
-    - cron: '10 6 * * 1-5'
-  
-  # 允许手动点按钮触发测试
+    - cron: '10 6 * * 1-5' # 北京时间 14:10
   workflow_dispatch:
 
 jobs:
@@ -14,9 +10,18 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: 1. 拉取仓库代码
+    # --- 第一阶段：准备环境 ---
+    - name: 1. 拉取代码 (Master分支)
       uses: actions/checkout@v3
       
+    # 【新增步骤】从数据分支“下载”记忆文件
+    - name: 📥 下载历史记忆 (从 data-storage 分支)
+      run: |
+        # 尝试从 data-storage 分支检出所有的 json 文件到当前目录
+        # 如果是第一次运行（没有json），允许报错继续
+        git fetch origin data-storage
+        git checkout origin/data-storage -- *.json || echo "⚠️ 暂无历史数据，将初始化新数据"
+
     - name: 2. 设置 Python 环境
       uses: actions/setup-python@v4
       with:
@@ -25,32 +30,44 @@ jobs:
     - name: 3. 安装依赖库
       run: pip install akshare requests pandas
 
+    # --- 第二阶段：大脑运算 ---
     - name: 4. 运行纳指策略
       continue-on-error: true 
       run: python smart_strategy.py
       
-    # 👇👇👇 新增这一步：强行等待 15 秒 👇👇👇
-    - name: ⏸️ 等待消息推送 (防止手表吞消息)
+    - name: ⏸️ 等待消息推送
       run: sleep 15
 
     - name: 5. 运行黄金策略
       continue-on-error: true
       run: python gold_strategy.py
 
-    - name: 6. 【核心】保存记忆 (Git Push)
+    # --- 第三阶段：保存记忆到独立分支 ---
+    - name: 6. 【核心】保存记忆 (推送到 data-storage)
       run: |
-        # 配置一个虚拟的 git 用户
+        # 配置 Git 用户
         git config --global user.name "GitHub Action Bot"
         git config --global user.email "actions@github.com"
         
-        # 检查有没有 json 文件变化
+        # 1. 把生成的 json 文件移动到临时文件夹 /tmp
+        # 为什么要移走？因为我们要切换分支，如果不移走可能会被覆盖或冲突
+        cp *.json /tmp/ || echo "没有生成 JSON 文件"
+        
+        # 2. 切换到数据分支 (data-storage)
+        # -f 强制切换，不理会当前工作区的代码文件
+        git fetch origin data-storage
+        git checkout -f data-storage
+        
+        # 3. 把 json 文件从临时文件夹拿回来
+        cp /tmp/*.json .
+        
+        # 4. 提交并推送
         git add *.json
         
-        # 如果有变化，就提交；没变化(比如周末)就跳过
         if git diff --staged --quiet; then
           echo "📅 数据无变化，无需保存"
         else
-          git commit -m "🤖 自动更新策略记忆数据 [skip ci]"
-          git push
-          echo "✅ 记忆数据已保存回仓库"
+          git commit -m "🤖 自动更新记忆 [$(date +'%Y-%m-%d')]"
+          git push origin data-storage
+          echo "✅ 记忆数据已保存到 data-storage 分支"
         fi
