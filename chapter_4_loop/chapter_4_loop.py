@@ -215,7 +215,6 @@ for i in range(1,6):
 # 我的答案
 import random
 salary = 10000
-i = 1
 for i in range(1,21):
     num = random.randint(1,10)
     if salary == 0:
