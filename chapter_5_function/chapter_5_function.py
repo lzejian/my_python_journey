@@ -219,6 +219,7 @@ def withdraw(num):
         print("------取款------")
         print(f"您已取出{num}元")
         check_balance(False)
+        #* 不管填True还是False还是阿猫阿狗，check_balance都会运行，但是参数在函数里面具体怎么运行那就不一定了。
 # 定义存款函数
 def deposit(num):
     global money
