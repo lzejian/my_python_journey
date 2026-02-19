@@ -63,6 +63,8 @@ result = check_age(16)
 # result = check_age(16) = None = flase,任何非None的值都是True
 if not result:
     print("未满18周岁，不得进入")
+else:
+    print(result)
 
 # none也可以用于存储空的值
 name = None
@@ -90,7 +92,7 @@ add(5,6)
 """
 # 定义一个准备嵌套的函数f2
 def function_2():
-    print("-----2-----")
+    print("-----2-----")  
 # 定义一个被嵌套的函数f1
 def function_1():
     print("-----1-----")
