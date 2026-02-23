@@ -303,8 +303,9 @@ test
 """
 my_str = "万过薪月，员序程马黑来，nohtyp学"
 index1 = my_str.index("黑")
-index2 = my_str.index("月")
-result1 = my_str[index1:index2 + 1:-1]
+index2 = my_str.index("，")
+# 若是想找第二个“，” ，那么可以用index(sub,start,end)的形式。例子：my_str.index(",",5)
+result1 = my_str[index1:index2:-1]
 print(f"结果是{result1}")
 
 my_str = "万过薪月，员序程马黑来，nohtyp学"
@@ -487,7 +488,7 @@ print(f"my_dict的最小元素是{min(my_dict)}")
 print(f"元组容器转列表的结果是：{list(my_tuple)}")
 print(f"字符串容器转列表的结果是：{list(my_str)}")
 print(f"集合容器转列表的结果是：{list(my_set)}")
-print(f"字典容器转列表的结果是：{list(my_dict)}")  # value值会消失。
+print(f"字典容器转列表的结果是：{list(my_dict)}")  # ['key1', 'key2', 'key3', 'key4', 'key5'].value值会消失。
 # 类型转换 容器转元组
 print(f"列表容器转元组的结果是：{tuple(my_list)}")
 print(f"字符串容器转元组的结果是：{tuple(my_str)}")
