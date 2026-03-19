@@ -187,6 +187,7 @@ print(risk_dict)
 
 # 问题代码（包含两个极其致命的初级/中级 Python 漏洞）：
 
+
 def batch_update_risk(new_risk_data, risk_db={}):
     for order_id in risk_db.keys():
         if order_id in new_risk_data:
@@ -196,14 +197,18 @@ def batch_update_risk(new_risk_data, risk_db={}):
                 del risk_db[order_id]
                 
     return risk_db
+# 第一天：第一批风控数据产生。调用方没有传入 risk_db，期望使用默认的空字典。
+batch_1 = {"O_001": ("High Risk", "Region Alert")}
+result_1 = batch_update_risk(batch_1)
+print(result_1) # 预期输出：{"O_001": ("High Risk", "Region Alert")}
 
-def buy_apple(bag=[]): 
-    bag.append("苹果")
-    return bag
-# 第一次调用，没传参数
-result1 = buy_apple()
-print(result1)  # 这里会打印出：['苹果']
+# 第二天：第二批数据产生。调用方依然没有传入 risk_db，期望再次从空字典开始。
+batch_2 = {"O_002": ("Low Risk", "Normal")}
+result_2 = batch_update_risk(batch_2)
+# 预期输出：{"O_002": ("Low Risk", "Normal")
 
-# 第二次调用，依然没传参数
-result2 = buy_apple()
-print(result2)
+# 参数陷阱 🪤：看看函数签名 def batch_update_risk(new_risk_data, risk_db={}):。在 Python 中，如果把一个可变的数据容器（比如列表 [] 或字典 {}）作为函数的默认参数，像上面那样第二天再次调用时，这个 {} 还是空的吗？会发生什么可怕的数据污染？
+
+# 遍历炸弹 💥：看看循环体 for order_id in risk_db.keys(): 里面的 del risk_db[order_id]。想象一下，你正在照着一个名单（keys）挨个点名，点到一半你直接把名单上的某个人给划掉（del），这会导致整个遍历过程出现什么严重的后果或报错？
+
+# 说出你的推断！如果不知道具体的报错名词也没关系，把逻辑后果说清楚就行。
