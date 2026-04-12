@@ -2,10 +2,10 @@
 演示函数的多返回值示例
 """
 def test_return():
-    return 1,"lzejian",2 > 3 # 函数只能返回一个值，但这个值可以是一个元组，所以return的结果是tuple(1,"lzejian",2 > 3)
-x,y,z = test_return() # 这一步是解包元组中的值，解包变量数要匹配否则会出错。
+    return 1,"lzejian",2 > 3 # 建包，建一个元组，#*因为函数只能返回一个值，但这个值可以是一个元组，所以return的结果是tuple(1,"lzejian",2 > 3)
+x,y,z = test_return() # 解包 ，这一步是解包元组中的值，解包变量数要匹配否则会出错。
 a,_,b = test_return() # 如果不想要中间这个值，可以用_表示占位置。
-print(x,y,z)
+print(x,y,z) # print的结果不加括号了。
 print(a,b)
 
 """
