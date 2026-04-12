@@ -212,3 +212,9 @@ result_2 = batch_update_risk(batch_2)
 # 遍历炸弹 💥：看看循环体 for order_id in risk_db.keys(): 里面的 del risk_db[order_id]。想象一下，你正在照着一个名单（keys）挨个点名，点到一半你直接把名单上的某个人给划掉（del），这会导致整个遍历过程出现什么严重的后果或报错？
 
 # 说出你的推断！如果不知道具体的报错名词也没关系，把逻辑后果说清楚就行。
+numbers = [1, 2, 2, 3]
+for num in numbers:
+    print(f"正在检查: {num}")
+    if num == 2:
+        numbers.remove(num)
+print("最终结果:", numbers)
