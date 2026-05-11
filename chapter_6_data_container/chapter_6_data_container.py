@@ -536,3 +536,13 @@ print(f"a与ab的大小结果是{"a" > "ab"}")
 print(f"a与A的大小结果是{"a" > "A"}")
 # key1比较key2
 print(f"key1与key2的大小结果是{"key1" < "key2"}")
+
+"""
+常用数据类型的判断
+"""
+# isinstance(data,type)-->bool-->判断数据是否是指定的类型：只会出现bool数据。
+num = -100
+print(isinstance(num,int)) # T
+print(isinstance(num,float)) # F
+print(isinstance(num,str)) # F
+print(isinstance(num,bool)) # F
