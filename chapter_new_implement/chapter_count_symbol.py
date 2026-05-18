@@ -39,3 +39,9 @@ print(f"圆的周长是{perimetre:.2f}，圆的面积是{area:.2f}")
 Height = float(input("请输入你的身高"))
 Weight = float(input("请输入你的体重"))
 print(f"身体质量指数为{Weight / Height / Height :.2f}")
+
+# 逻辑运算符---and,or,not
+n = int(input("请输入你的数字"))
+
+print(f"{n}在10~20之间:",n >= 10 and n <= 20)
+# 也可以写成 print(f"{n}在10~20之间:",10 <= n <= 20)
