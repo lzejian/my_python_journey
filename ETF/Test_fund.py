@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 # ==========================================
 NUM_SIMULATIONS = 10000  # 蒙特卡洛模拟路径数
 YEARS_INVEST = 10        # 前10年每月定投
-YEARS_HOLD = 20          # 修改为后20年纯持有不动
-TOTAL_YEARS = YEARS_INVEST + YEARS_HOLD # 修复：定义总年份
+YEARS_HOLD = 20          # 后20年纯持有不动
+TOTAL_YEARS = YEARS_INVEST + YEARS_HOLD # 总年份
 TOTAL_MONTHS = TOTAL_YEARS * 12         # 总计360个月
 
 MONTHLY_INVEST = 2000    # 每月定投本金
@@ -20,9 +20,9 @@ ETF_FEE_ANNUAL = 0.0065  # 场内ETF年化费率（0.65%）
 # ==========================================
 ANNUAL_RETURN_NORMAL = 0.18  # 正常年份的预期年化收益率
 ANNUAL_VOLATILITY = 0.20     # 年化波动率
-CRASH_FREQ_YEARS = 4.5       # 黑天鹅平均发生周期（年）
-CRASH_MIN = -0.50            # 黑天鹅极端跌幅下限
-CRASH_MAX = -0.40            # 黑天鹅极端跌幅上限
+CRASH_FREQ_YEARS = 8.0       # 【修改】黑天鹅平均发生周期（年），贴近真实宏观大清洗周期
+CRASH_MIN = -0.45            # 【修改】黑天鹅极端跌幅下限锁定为 45%
+CRASH_MAX = -0.45            # 【修改】黑天鹅极端跌幅上限锁定为 45%
 
 CRASH_PROB_MONTHLY = 1 / (CRASH_FREQ_YEARS * 12)
 

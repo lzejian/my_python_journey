@@ -302,3 +302,47 @@ else:
             print("最后一次可算猜中了。")
         else:
             print("没机会了三次都猜中。")
+"""
+match case 新语法
+"""
+# match case 是一种选定好固定值后，通过匹配固定值来运行对应的代码，运行后即结束，和if else相似。
+# if else运行较大的逻辑和范围，match case是固定值。
+
+#* （# %%）是在vscode中直接测试你想运行的那部分代码的特殊操作符号，放在代码最上方就会出现。
+day = input("please type what day is it today.")
+match day:
+    case "1":
+        print("周一是工作会议日")
+    case "2":
+        print("周二是学习培训日")
+    case "3":
+        print("周三是项目开发日")
+    case "4":
+        print("周四是代码审查日")
+    case "5":
+        print("周五是总结规划日")
+    case "6" | "7":  # | 代表或者的意思
+        print("周末是休息日")
+    case _: # _特殊主义是不带双引号的
+        print("操作错误")
+"""
+--------------------------------------------
+"""
+# 练习 计算器
+# %%
+num_1 = float(input("type first number:"))
+num_2 = float(input("type second number:")) 
+operater = (input("select your operater symbol (+-*/):"))
+match operater:
+    case "+":
+        print(f"{num_1} + {num_2} = {num_1 + num_2 :.2f}")
+    case "-":
+        print(f"{num_1} - {num_2} = {num_1 - num_2 :.2f}")
+    case "*":
+        print(f"{num_1} * {num_2} = {num_1 * num_2 :.2f}")
+    case "/" if num_2 != 0:
+    #* 特殊注意，if放在这里的意思就是仅在if条件下才运行这个case。
+        print(f"{num_1} / {num_2} = {num_1 / num_2 :.2f}")
+    case _ :
+        print("oprate error,please try again")
+
