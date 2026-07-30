@@ -1,26 +1,16 @@
 """
-AWS Lambda - 统一每日监控系统
+AWS Lambda - 统一每日监控系统 (优化版 - 加入绿色静默模式)
 ====================================================================
-模块 A：TQQQ LRS (Leverage Rotation Strategy) 杠杆轮动策略监控
-模块 B：QDII 基金公告监控（限额/放假/定投通知）
-
-功能：每日触发一次，顺序执行两个独立监控模块，各自通过 Bark 推送。
-      即使其中一个模块失败，也不会影响另一个模块的运行。
-
-触发方式：AWS EventBridge 定时规则 (cron)
-推荐触发时间：UTC 05:00 (北京时间 13:00)
-
-环境变量：
-  - BARK_TOKEN: Bark 推送 Token (必须)
-  - FRED_API_KEY: FRED API 密钥 (默认已内置)
-  - ALIYUN_APPCODE: 阿里云市场 AppCode (默认已内置)
-  - S3_BUCKET: 存储 QDII 历史记录的 S3 桶名 (必须)
-  - S3_STATE_KEY: S3 中状态文件的 key (默认: fund_notice_state_v2.json)
+优化点：
+1. yfinance 数据获取增加了重试机制，增强稳定性。
+2. QDII 基金的 CUTOFF_DATE 改为动态计算（最近30天），避免长期运行后的性能衰退。
+3. LRS 策略加入静默模式：当趋势为 GREEN 时，只记录日志，不发送 Bark 推送，减少日常打扰。
 """
 
 import json
 import os
 import logging
+import time
 from datetime import datetime, timedelta
 
 import boto3
@@ -55,7 +45,10 @@ QDII_API_URL = "https://lhjjhqsjcx.market.alicloudapi.com/fund/notice"
 ALIYUN_APPCODE = os.environ.get("ALIYUN_APPCODE", "cad000d1ad8a4b35a17a5825a9b3d4ab")
 S3_BUCKET = os.environ.get("S3_BUCKET", "")
 S3_STATE_KEY = os.environ.get("S3_STATE_KEY", "fund_notice_state_v2.json")
-CUTOFF_DATE = "2026-05-19 00:00:00"
+
+# 动态计算 CUTOFF_DATE（过滤 30 天前的旧公告）
+CUTOFF_DATETIME = datetime.now() - timedelta(days=30)
+CUTOFF_DATE_STR = CUTOFF_DATETIME.strftime("%Y-%m-%d %H:%M:%S")
 
 QDII_FUNDS = {
     "002891": "华夏移动互联混合",
@@ -84,6 +77,24 @@ def send_bark(title: str, body: str, group: str = "量化监控") -> bool:
     except Exception as e:
         logger.error(f"Bark 推送失败: {e}")
         return False
+
+
+def get_yfinance_data_with_retry(ticker_symbol: str, period: str, max_retries: int = 3) -> pd.DataFrame:
+    """带重试机制的 yfinance 数据获取函数"""
+    for attempt in range(1, max_retries + 1):
+        try:
+            ticker = yf.Ticker(ticker_symbol)
+            df = ticker.history(period=period)
+            if not df.empty:
+                return df
+            logger.warning(f"第 {attempt} 次尝试获取 {ticker_symbol} 数据为空。")
+        except Exception as e:
+            logger.warning(f"第 {attempt} 次尝试获取 {ticker_symbol} 数据失败: {e}")
+        
+        if attempt < max_retries:
+            time.sleep(3)  # 等待 3 秒后重试
+            
+    return pd.DataFrame() # 所有重试失败后返回空 DataFrame
 
 
 # ============================================================
@@ -122,26 +133,33 @@ def is_market_closed(latest_date: pd.Timestamp) -> bool:
         return diff > 1
 
 
-def run_lrs_strategy() -> str:
-    """执行 LRS 策略分析，返回完整报告文本"""
+def run_lrs_strategy() -> tuple[str, str | None]:
+    """
+    执行 LRS 策略分析
+    返回: (完整报告文本, 趋势等级 GREEN/YELLOW/RED)
+    如果是休市日，返回 ("MARKET_CLOSED", None)
+    """
     logger.info("[LRS] 正在获取 QQQ 数据...")
-    ticker = yf.Ticker("QQQ")
-    df = ticker.history(period=f"{LOOKBACK_DAYS}d")
+    
+    # 使用带重试机制的函数代替直接调用
+    df = get_yfinance_data_with_retry("QQQ", period=f"{LOOKBACK_DAYS}d")
 
     if df.empty or len(df) < SMA_PERIOD:
-        raise ValueError(f"QQQ 数据不足: 仅获取 {len(df)} 条，需要至少 {SMA_PERIOD} 条")
+        raise ValueError(f"QQQ 数据获取失败或不足: 仅获取 {len(df)} 条，需要至少 {SMA_PERIOD} 条")
 
     latest_date = df.index[-1]
     if isinstance(latest_date, pd.Timestamp) and latest_date.tzinfo:
         latest_date = latest_date.tz_localize(None)
 
     if is_market_closed(pd.Timestamp(latest_date, tz="America/New_York")):
-        return "MARKET_CLOSED"
+        return "MARKET_CLOSED", None
 
     close = df["Close"].iloc[-1]
     sma200 = df["Close"].rolling(window=SMA_PERIOD).mean().iloc[-1]
     atr_series = ta.atr(df["High"], df["Low"], df["Close"], length=ATR_PERIOD)
     atr14 = atr_series.iloc[-1]
+    
+    # 计算带有缓冲区的动态防守线
     trigger = sma200 - (ATR_MULTIPLIER * atr14)
 
     if close > sma200:
@@ -207,7 +225,7 @@ def run_lrs_strategy() -> str:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🤖 LRS Monitor v2.0 | Powered by yfinance + FRED"""
 
-    return report
+    return report, trend_level
 
 
 # ============================================================
@@ -243,7 +261,7 @@ def save_qdii_history(history: list):
 
 def run_qdii_monitor():
     """执行 QDII 基金公告监控"""
-    logger.info("[QDII] 开始扫描基金公告...")
+    logger.info(f"[QDII] 开始扫描基金公告 (过滤 {CUTOFF_DATE_STR} 之前的数据)...")
 
     history = load_qdii_history()
     if history is None:
@@ -286,7 +304,8 @@ def run_qdii_monitor():
                 title = str(title)
                 date_str = str(date_str)
 
-                if date_str < CUTOFF_DATE:
+                # 使用动态计算的 CUTOFF_DATE_STR
+                if date_str < CUTOFF_DATE_STR:
                     continue
                 if "提示性公告" in title:
                     continue
@@ -349,13 +368,21 @@ def lambda_handler(event, context):
 
     # ---- 模块 A：LRS TQQQ 策略 ----
     try:
-        report = run_lrs_strategy()
+        report, trend_level = run_lrs_strategy()
+        
         if report == "MARKET_CLOSED":
-            send_bark("📊 LRS 策略监控", "今日为美股休息日，暂停报告生成。", "量化监控")
+            logger.info("[LRS] 今日美股休市。")
             results["lrs"] = "market_closed"
+        elif trend_level == "GREEN":
+            # 绿色安全期触发静默模式
+            logger.info("[LRS] 当前处于绿色安全期，触发静默模式，不发送 Bark 推送。")
+            logger.info(f"生成的报告内容:\n{report}")
+            results["lrs"] = "success_silent"
         else:
-            send_bark("📊 LRS 策略复盘报告", report, "量化监控")
-            results["lrs"] = "success"
+            # YELLOW 或 RED 状态发送报警
+            send_bark("⚠️ LRS 策略预警", report, "量化监控")
+            results["lrs"] = "success_notified"
+            
     except Exception as e:
         error_msg = f"⚠️ LRS 监控异常\n\n错误类型: {type(e).__name__}\n错误详情: {str(e)}"
         logger.error(f"[LRS] 运行异常: {e}", exc_info=True)
