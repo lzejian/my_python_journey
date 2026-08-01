@@ -1,10 +1,32 @@
 """
-AWS Lambda - 统一每日监控系统 (优化版 - 加入绿色静默模式)
+AWS Lambda - 统一每日监控系统 (优化版 v2.1 - 绿色静默 + 工作日触发)
 ====================================================================
-优化点：
-1. yfinance 数据获取增加了重试机制，增强稳定性。
-2. QDII 基金的 CUTOFF_DATE 改为动态计算（最近30天），避免长期运行后的性能衰退。
-3. LRS 策略加入静默模式：当趋势为 GREEN 时，只记录日志，不发送 Bark 推送，减少日常打扰。
+模块 A：TQQQ LRS (Leverage Rotation Strategy) 杠杆轮动策略监控
+模块 B：QDII 基金公告监控（限额/放假/定投通知）
+
+优化点 (v2.1):
+  1. yfinance 数据获取增加重试机制 (3次)，增强稳定性
+  2. QDII CUTOFF_DATE 改为动态计算（最近30天），避免性能衰退
+  3. LRS 加入绿色静默模式：GREEN 时只记录日志不推送，减少打扰
+  4. FRED API 增加重试+降级：502时技术面照常输出，宏观面标注暂不可用
+  5. Cron 改为仅工作日触发，避开周末 FRED 维护窗口
+
+触发方式：AWS EventBridge 定时规则
+推荐 Cron：cron(0 2 ? * MON-FRI *)
+           = UTC 02:00 = 北京时间 10:00，仅周一至周五
+
+时间逻辑说明：
+  - 美股收盘 = 北京时间次日凌晨 4:00
+  - 周一 10:00 触发 → 获取周五收盘数据（周末无新交易）
+  - 周二~周五 10:00 触发 → 获取前一晚（即当天凌晨4点）收盘数据
+  - 周六/周日不触发 → 避开 FRED 系统维护 + 用户无需周末推送
+
+环境变量：
+  - BARK_TOKEN: Bark 推送 Token (必须)
+  - FRED_API_KEY: FRED API 密钥 (默认已内置)
+  - ALIYUN_APPCODE: 阿里云市场 AppCode (默认已内置)
+  - S3_BUCKET: 存储 QDII 历史记录的 S3 桶名 (必须)
+  - S3_STATE_KEY: S3 中状态文件的 key (默认: fund_notice_state_v2.json)
 """
 
 import json
@@ -90,18 +112,18 @@ def get_yfinance_data_with_retry(ticker_symbol: str, period: str, max_retries: i
             logger.warning(f"第 {attempt} 次尝试获取 {ticker_symbol} 数据为空。")
         except Exception as e:
             logger.warning(f"第 {attempt} 次尝试获取 {ticker_symbol} 数据失败: {e}")
-        
+
         if attempt < max_retries:
-            time.sleep(3)  # 等待 3 秒后重试
-            
-    return pd.DataFrame() # 所有重试失败后返回空 DataFrame
+            time.sleep(3)
+
+    return pd.DataFrame()
 
 
 # ============================================================
 # 模块 A：TQQQ LRS 策略监控
 # ============================================================
-def get_fred_series_latest(series_id: str) -> float | None:
-    """从 FRED API 获取指定序列的最新数值"""
+def get_fred_series_latest(series_id: str, max_retries: int = 3) -> float | None:
+    """从 FRED API 获取指定序列的最新数值（带重试降级）"""
     url = "https://api.stlouisfed.org/fred/series/observations"
     params = {
         "series_id": series_id,
@@ -110,38 +132,33 @@ def get_fred_series_latest(series_id: str) -> float | None:
         "sort_order": "desc",
         "limit": 10,
     }
-    resp = requests.get(url, params=params, timeout=15)
-    resp.raise_for_status()
-    observations = resp.json().get("observations", [])
-    for obs in observations:
-        value = obs.get("value", ".")
-        if value != ".":
-            return float(value)
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = requests.get(url, params=params, timeout=15)
+            resp.raise_for_status()
+            observations = resp.json().get("observations", [])
+            for obs in observations:
+                value = obs.get("value", ".")
+                if value != ".":
+                    return float(value)
+            return None
+        except Exception as e:
+            logger.warning(f"FRED {series_id} 第 {attempt} 次请求失败: {e}")
+            if attempt < max_retries:
+                time.sleep(3)
+
+    # 所有重试失败，降级返回 None（报告中将显示"暂不可用"）
+    logger.error(f"FRED {series_id} 全部 {max_retries} 次重试失败，降级处理")
     return None
-
-
-def is_market_closed(latest_date: pd.Timestamp) -> bool:
-    """判断今天是否为美股休市日"""
-    today = pd.Timestamp.now(tz="America/New_York").normalize()
-    diff = (today - latest_date).days
-    weekday = today.weekday()
-    if weekday == 0:
-        return diff > 3
-    elif weekday in (5, 6):
-        return True
-    else:
-        return diff > 1
 
 
 def run_lrs_strategy() -> tuple[str, str | None]:
     """
     执行 LRS 策略分析
     返回: (完整报告文本, 趋势等级 GREEN/YELLOW/RED)
-    如果是休市日，返回 ("MARKET_CLOSED", None)
     """
     logger.info("[LRS] 正在获取 QQQ 数据...")
-    
-    # 使用带重试机制的函数代替直接调用
+
     df = get_yfinance_data_with_retry("QQQ", period=f"{LOOKBACK_DAYS}d")
 
     if df.empty or len(df) < SMA_PERIOD:
@@ -151,15 +168,10 @@ def run_lrs_strategy() -> tuple[str, str | None]:
     if isinstance(latest_date, pd.Timestamp) and latest_date.tzinfo:
         latest_date = latest_date.tz_localize(None)
 
-    if is_market_closed(pd.Timestamp(latest_date, tz="America/New_York")):
-        return "MARKET_CLOSED", None
-
     close = df["Close"].iloc[-1]
     sma200 = df["Close"].rolling(window=SMA_PERIOD).mean().iloc[-1]
     atr_series = ta.atr(df["High"], df["Low"], df["Close"], length=ATR_PERIOD)
     atr14 = atr_series.iloc[-1]
-    
-    # 计算带有缓冲区的动态防守线
     trigger = sma200 - (ATR_MULTIPLIER * atr14)
 
     if close > sma200:
@@ -223,7 +235,7 @@ def run_lrs_strategy() -> tuple[str, str | None]:
 💡 {conclusion}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🤖 LRS Monitor v2.0 | Powered by yfinance + FRED"""
+🤖 LRS Monitor v2.1 | Powered by yfinance + FRED"""
 
     return report, trend_level
 
@@ -304,7 +316,6 @@ def run_qdii_monitor():
                 title = str(title)
                 date_str = str(date_str)
 
-                # 使用动态计算的 CUTOFF_DATE_STR
                 if date_str < CUTOFF_DATE_STR:
                     continue
                 if "提示性公告" in title:
@@ -362,6 +373,7 @@ def lambda_handler(event, context):
     """
     AWS Lambda 标准入口
     顺序执行两个监控模块，各自独立，互不影响。
+    仅在工作日 (MON-FRI) UTC 02:00 被 EventBridge 触发。
     """
     logger.info("====== 统一监控系统启动 ======")
     results = {}
@@ -369,20 +381,17 @@ def lambda_handler(event, context):
     # ---- 模块 A：LRS TQQQ 策略 ----
     try:
         report, trend_level = run_lrs_strategy()
-        
-        if report == "MARKET_CLOSED":
-            logger.info("[LRS] 今日美股休市。")
-            results["lrs"] = "market_closed"
-        elif trend_level == "GREEN":
-            # 绿色安全期触发静默模式
+
+        if trend_level == "GREEN":
+            # 绿色安全期触发静默模式，不打扰用户
             logger.info("[LRS] 当前处于绿色安全期，触发静默模式，不发送 Bark 推送。")
-            logger.info(f"生成的报告内容:\n{report}")
+            logger.info(f"[LRS] 报告内容:\n{report}")
             results["lrs"] = "success_silent"
         else:
-            # YELLOW 或 RED 状态发送报警
+            # YELLOW 或 RED 状态发送预警
             send_bark("⚠️ LRS 策略预警", report, "量化监控")
             results["lrs"] = "success_notified"
-            
+
     except Exception as e:
         error_msg = f"⚠️ LRS 监控异常\n\n错误类型: {type(e).__name__}\n错误详情: {str(e)}"
         logger.error(f"[LRS] 运行异常: {e}", exc_info=True)
