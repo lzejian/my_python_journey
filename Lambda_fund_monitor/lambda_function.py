@@ -1,17 +1,16 @@
 """
-AWS Lambda - 统一每日监控系统 (v3.1 - 四维量化状态机 + 自动展期 VIX API)
+AWS Lambda - 统一每日监控系统 (v3.2 - 四维量化状态机 + 自动展期 VIX 实战版)
 ====================================================================
 模块 A：TQQQ 四维量化状态机（State Machine）风控策略
 模块 B：QDII 基金公告监控（仅保留景顺长城全球半导体芯片）
 
-版本 v3.1 核心升级:
-  1. 接入阿里云 VIX 期货 API，实现真实 VIX 期限结构贴水监控 (VIX1 / VIX2 > 1.0 熔断)
-  2. 增加 VIX 期货合约代码动态换月/展期算法（每月 18 号后自动切换为下一个月合约，避免旧合约过期）
-  3. 保持四大状态机逻辑：RED / ORANGE / YELLOW / GREEN
-  4. FRED 宏观指标：萨姆规则、高收益信用利差、美联储净流动性变动
-  5. 技术面指标：ADX14 趋势强度、200SMA - 2*ATR14 动态通道止损
-  6. QDII 模块精简为仅监控景顺长城半导体芯片基金
-  7. 绿色静默模式：GREEN 仅日志不推送；YELLOW / ORANGE / RED 发送 Bark
+版本 v3.2 核心升级:
+  1. 完整接入新版外盘期货 VIX 报价 API (https://lhgphqcx.market.alicloudapi.com/finance/external-futures-price)
+  2. 自动合约展期换月：每月 18 号之后自动从 VX2608/VX2609 轮动至 VX2609/VX2610，绝不使用过期旧合约
+  3. 四大状态机：RED / ORANGE / YELLOW / GREEN 智能决策
+  4. FRED 宏观面监控：萨姆规则、高收益信用利差、美联储净流动性变动
+  5. 技术面监控：ADX14 趋势强度、200SMA - 2*ATR14 动态通道止损
+  6. 绿色静默模式：GREEN 状态不打扰，YELLOW/ORANGE/RED 发送 Bark 预警
 
 环境要求：
   Python 3.10+
@@ -58,9 +57,9 @@ FRED_WALCL = "WALCL"                # 美联储总资产
 FRED_WTREGEN = "WTREGEN"            # 财政部一般账户 (TGA)
 FRED_RRPONTSYD = "RRPONTSYD"        # 隔夜逆回购
 
-# 阿里云 API
+# 阿里云 API 配置
 ALIYUN_APPCODE = os.environ.get("ALIYUN_APPCODE", "cad000d1ad8a4b35a17a5825a9b3d4ab")
-VIX_API_URL = "https://alirmcom2.market.alicloudapi.com/query/comkm4"
+VIX_API_URL = "https://lhgphqcx.market.alicloudapi.com/finance/external-futures-price"
 
 # 技术面参数
 SMA_PERIOD = 200
@@ -186,16 +185,17 @@ def get_fred_series_history(series_id: str, observation_start: str, max_retries:
 # ============================================================
 def get_vix_contract_symbols(now: datetime = None) -> tuple[str, str]:
     """
-    动态计算近月(VIX1)和远月(VIX2)合约代码。
-    CBOE VIX 期货每月第三个周三到期，此处设定每月 18 号之后自动换月进下一个月合约。
+    动态计算近月(VIX1)和远月(VIX2)合约代码（格式: VX2608, VX2609）。
+    CBOE VIX 期货每月第三个周三到期，此处设定每月 18 号之后自动换月进下一个月合约，绝不使用过期旧合约。
     例如：
-      2026年8月3号 -> VIX1=CBOEVIX2608, VIX2=CBOEVIX2609
-      2026年8月20号 -> VIX1=CBOEVIX2609, VIX2=CBOEVIX2610
+      2026年8月3号  -> VIX1=VX2608, VIX2=VX2609
+      2026年8月20号 -> VIX1=VX2609, VIX2=VX2610
+      2026年9月20号 -> VIX1=VX2610, VIX2=VX2611
     """
     if now is None:
         now = datetime.now()
 
-    # 每月18号之后自动换月到下个月
+    # 每月 18 号之后自动换月到下一个月合约
     if now.day > 18:
         if now.month == 12:
             m1_year, m1_month = now.year + 1, 1
@@ -209,53 +209,35 @@ def get_vix_contract_symbols(now: datetime = None) -> tuple[str, str]:
     else:
         m2_year, m2_month = m1_year, m1_month + 1
 
-    vix1_symbol = f"CBOEVIX{m1_year % 100:02d}{m1_month:02d}"
-    vix2_symbol = f"CBOEVIX{m2_year % 100:02d}{m2_month:02d}"
+    vix1_symbol = f"VX{m1_year % 100:02d}{m1_month:02d}"
+    vix2_symbol = f"VX{m2_year % 100:02d}{m2_month:02d}"
 
     return vix1_symbol, vix2_symbol
 
 
 def fetch_vix_contract_price(symbol: str) -> float | None:
-    """调用阿里云市场 VIX 期货接口获取最新收盘价/现价"""
+    """调用外盘期货报价接口 (POST) 获取最新现价"""
     headers = {
         "Authorization": f"APPCODE {ALIYUN_APPCODE}",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
     }
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    params = {
+    payload = {
         "symbol": symbol,
-        "period": "D",
-        "date": today_str,
-        "withlast": 1,
     }
 
     try:
-        resp = requests.get(VIX_API_URL, headers=headers, params=params, timeout=10)
+        resp = requests.post(VIX_API_URL, headers=headers, data=payload, timeout=10)
         if resp.status_code != 200:
-            logger.warning(f"[VIX API] 查询 {symbol} 失败, HTTP状态码: {resp.status_code}")
+            logger.warning(f"[VIX API] 查询 {symbol} 失败, HTTP 状态码: {resp.status_code}")
             return None
 
-        data = resp.json()
-        logger.info(f"[VIX API] {symbol} 返回原始数据: {data}")
+        res_json = resp.json()
+        logger.info(f"[VIX API] {symbol} 返回数据: {res_json}")
 
-        items = []
-        if isinstance(data, dict):
-            if "data" in data and isinstance(data["data"], list):
-                items = data["data"]
-            elif "result" in data and isinstance(data["result"], list):
-                items = data["result"]
-            elif "list" in data and isinstance(data["list"], list):
-                items = data["list"]
-            elif "showapi_res_body" in data:
-                items = data["showapi_res_body"].get("list", [])
-        elif isinstance(data, list):
-            items = data
-
-        if items:
-            latest = items[-1]
-            if isinstance(latest, dict):
-                for key in ["close", "last", "price", "p", "c", "closePrice"]:
-                    if key in latest and latest[key] is not None:
-                        return float(latest[key])
+        if res_json.get("code") == 200 or res_json.get("success") is True:
+            data = res_json.get("data", {})
+            if isinstance(data, dict) and "price" in data:
+                return float(data["price"])
 
         return None
     except Exception as e:
@@ -410,8 +392,8 @@ def run_state_machine() -> tuple[str, str]:
     sahm_str = f"{sahm_value:.2f}%" if sahm_value is not None else "数据暂不可用"
     hy_str = f"{hy_oas * 100:.0f} 个基点" if hy_oas is not None else "数据暂不可用"
     t10y2y_str = f"{t10y2y:.2f}%" if t10y2y is not None else "数据暂不可用"
-    liq_str = f"{"正" if net_liq_change >= 0 else "负"} {abs(net_liq_change):.1f}%" if net_liq_change is not None else "数据暂不可用"
-    vix_str = f"{vix_ratio:.2f}，{"⚠️ 贴水(恐慌)" if vix_ratio > 1.0 else "升水正常，无机构恐慌"}" if vix_ratio is not None else "数据暂不可用"
+    liq_str = f"{'正' if net_liq_change >= 0 else '负'} {abs(net_liq_change):.1f}%" if net_liq_change is not None else "数据暂不可用"
+    vix_str = f"{vix_ratio:.2f}，{'⚠️ 贴水(恐慌)' if vix_ratio > 1.0 else '升水正常，无机构恐慌'}" if vix_ratio is not None else "数据暂不可用"
 
     if adx14 >= 25:
         adx_comment = "强单边趋势"
@@ -431,12 +413,12 @@ def run_state_machine() -> tuple[str, str]:
 ● QQQ 现价：${close:.2f} 美元
 ● 二百日均线：${sma200:.2f} 美元
 ● 十四日真实波幅：${atr14:.2f} 美元
-● 动态离场线：${stop_level:.2f} 美元，当前价格{"高于" if distance_pct >= 0 else "低于"}离场线 {abs(distance_pct):.1f}%
+● 动态离场线：${stop_level:.2f} 美元，当前价格{'高于' if distance_pct >= 0 else '低于'}离场线 {abs(distance_pct):.1f}%
 ● 趋势强度 ADX：{adx14:.1f}，{adx_comment}
-● 萨姆规则数值：{sahm_str}，{"⚠️ 超过" if sahm_value is not None and sahm_value >= SAHM_THRESHOLD else "低于"} {SAHM_THRESHOLD}% 衰退线
-● 高收益信用利差：{hy_str}，{"⚠️ 超过" if hy_oas is not None and hy_oas >= HY_OAS_THRESHOLD else "低于"} {HY_OAS_THRESHOLD * 100:.0f} 个基点警戒线
+● 萨姆规则数值：{sahm_str}，{'⚠️ 超过' if sahm_value is not None and sahm_value >= SAHM_THRESHOLD else '低于'} {SAHM_THRESHOLD}% 衰退线
+● 高收益信用利差：{hy_str}，{'⚠️ 超过' if hy_oas is not None and hy_oas >= HY_OAS_THRESHOLD else '低于'} {HY_OAS_THRESHOLD * 100:.0f} 个基点警戒线
 ● VIX 期限结构比值：{vix_str}
-● 美联储净流动性三个月变动：{liq_str}，{"⚠️ 资金面恶化" if net_liq_change is not None and net_liq_change <= NET_LIQUIDITY_DROP_THRESHOLD else "资金面健康"}
+● 美联储净流动性三个月变动：{liq_str}，{'⚠️ 资金面恶化' if net_liq_change is not None and net_liq_change <= NET_LIQUIDITY_DROP_THRESHOLD else '资金面健康'}
 ● 10Y-2Y 美债利差：{t10y2y_str}{"  ⚠️ 收益率曲线倒挂" if t10y2y is not None and t10y2y < 0 else ""}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -445,7 +427,7 @@ def run_state_machine() -> tuple[str, str]:
 操作建议：{"今日无需调仓，继续持有 TQQQ。" if state == "GREEN" else "⚡ 请立即调仓！" + action_map[state]}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🤖 State Machine v3.1 | Powered by yfinance + FRED + Aliyun VIX"""
+🤖 State Machine v3.2 | Powered by yfinance + FRED + Aliyun VIX"""
 
     return report, state
 
@@ -584,7 +566,7 @@ def lambda_handler(event, context):
     AWS Lambda 标准入口
     仅在工作日 (MON-FRI) UTC 02:00 被 EventBridge 触发。
     """
-    logger.info("====== 统一监控系统 v3.1 启动 ======")
+    logger.info("====== 统一监控系统 v3.2 启动 ======")
     results = {}
 
     # ---- 模块 A：四维量化状态机 ----
