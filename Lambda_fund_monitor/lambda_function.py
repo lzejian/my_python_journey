@@ -1,25 +1,21 @@
 """
-AWS Lambda - 统一每日监控系统 (优化版 v2.1 - 绿色静默 + 工作日触发)
+AWS Lambda - 统一每日监控系统 (v3.1 - 四维量化状态机 + 自动展期 VIX API)
 ====================================================================
-模块 A：TQQQ LRS (Leverage Rotation Strategy) 杠杆轮动策略监控
-模块 B：QDII 基金公告监控（限额/放假/定投通知）
+模块 A：TQQQ 四维量化状态机（State Machine）风控策略
+模块 B：QDII 基金公告监控（仅保留景顺长城全球半导体芯片）
 
-优化点 (v2.1):
-  1. yfinance 数据获取增加重试机制 (3次)，增强稳定性
-  2. QDII CUTOFF_DATE 改为动态计算（最近30天），避免性能衰退
-  3. LRS 加入绿色静默模式：GREEN 时只记录日志不推送，减少打扰
-  4. FRED API 增加重试+降级：502时技术面照常输出，宏观面标注暂不可用
-  5. Cron 改为仅工作日触发，避开周末 FRED 维护窗口
+版本 v3.1 核心升级:
+  1. 接入阿里云 VIX 期货 API，实现真实 VIX 期限结构贴水监控 (VIX1 / VIX2 > 1.0 熔断)
+  2. 增加 VIX 期货合约代码动态换月/展期算法（每月 18 号后自动切换为下一个月合约，避免旧合约过期）
+  3. 保持四大状态机逻辑：RED / ORANGE / YELLOW / GREEN
+  4. FRED 宏观指标：萨姆规则、高收益信用利差、美联储净流动性变动
+  5. 技术面指标：ADX14 趋势强度、200SMA - 2*ATR14 动态通道止损
+  6. QDII 模块精简为仅监控景顺长城半导体芯片基金
+  7. 绿色静默模式：GREEN 仅日志不推送；YELLOW / ORANGE / RED 发送 Bark
 
-触发方式：AWS EventBridge 定时规则
-推荐 Cron：cron(0 2 ? * MON-FRI *)
-           = UTC 02:00 = 北京时间 10:00，仅周一至周五
-
-时间逻辑说明：
-  - 美股收盘 = 北京时间次日凌晨 4:00
-  - 周一 10:00 触发 → 获取周五收盘数据（周末无新交易）
-  - 周二~周五 10:00 触发 → 获取前一晚（即当天凌晨4点）收盘数据
-  - 周六/周日不触发 → 避开 FRED 系统维护 + 用户无需周末推送
+环境要求：
+  Python 3.10+
+  依赖库: boto3, yfinance, pandas, pandas_ta, requests
 
 环境变量：
   - BARK_TOKEN: Bark 推送 Token (必须)
@@ -53,18 +49,35 @@ BARK_BASE_URL = f"https://api.day.app/{BARK_TOKEN}/"
 
 # FRED API
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "749812e69e99644cfd562b14b57461aa")
-FRED_T10Y2Y = "T10Y2Y"
-FRED_FED_RATE = "DFEDTARU"
 
-# LRS 技术面参数
+# FRED 序列 ID
+FRED_SAHM = "SAHMREALTIME"          # 萨姆规则实时指标
+FRED_HY_OAS = "BAMLH0A0HYM2"        # 高收益信用利差 (OAS)
+FRED_T10Y2Y = "T10Y2Y"              # 10Y-2Y 美债利差
+FRED_WALCL = "WALCL"                # 美联储总资产
+FRED_WTREGEN = "WTREGEN"            # 财政部一般账户 (TGA)
+FRED_RRPONTSYD = "RRPONTSYD"        # 隔夜逆回购
+
+# 阿里云 API
+ALIYUN_APPCODE = os.environ.get("ALIYUN_APPCODE", "cad000d1ad8a4b35a17a5825a9b3d4ab")
+VIX_API_URL = "https://alirmcom2.market.alicloudapi.com/query/comkm4"
+
+# 技术面参数
 SMA_PERIOD = 200
 ATR_PERIOD = 14
-ATR_MULTIPLIER = 1.5
+ADX_PERIOD = 14
+ATR_MULTIPLIER = 2.0                # 动态止损乘数
+ADX_MONKEY_THRESHOLD = 20           # ADX < 20 判定为猴市
 LOOKBACK_DAYS = 300
+
+# 宏观面阈值
+SAHM_THRESHOLD = 0.50               # 萨姆规则衰退阈值 (%)
+HY_OAS_THRESHOLD = 5.50             # 高收益利差警戒线 (%)
+NET_LIQUIDITY_DROP_THRESHOLD = -8.0  # 净流动性3月跌幅阈值 (%)
+VIX_BACKWARDATION_THRESHOLD = 1.0   # VIX 期货贴水阈值 (VIX1/VIX2 > 1.0)
 
 # QDII 基金监控配置
 QDII_API_URL = "https://lhjjhqsjcx.market.alicloudapi.com/fund/notice"
-ALIYUN_APPCODE = os.environ.get("ALIYUN_APPCODE", "cad000d1ad8a4b35a17a5825a9b3d4ab")
 S3_BUCKET = os.environ.get("S3_BUCKET", "")
 S3_STATE_KEY = os.environ.get("S3_STATE_KEY", "fund_notice_state_v2.json")
 
@@ -72,14 +85,9 @@ S3_STATE_KEY = os.environ.get("S3_STATE_KEY", "fund_notice_state_v2.json")
 CUTOFF_DATETIME = datetime.now() - timedelta(days=30)
 CUTOFF_DATE_STR = CUTOFF_DATETIME.strftime("%Y-%m-%d %H:%M:%S")
 
+# 仅保留景顺长城全球半导体芯片
 QDII_FUNDS = {
-    "002891": "华夏移动互联混合",
-    "006373": "国富全球科技互联混合",
-    "539002": "建信新兴市场混合",
-    "012920": "易方达全球成长精选混合",
     "501225": "景顺长城全球半导体芯片股票A",
-    "006555": "浦银安盛全球智能科技(QDII)A",
-    "160213": "国泰纳斯达克100指数",
 }
 
 s3_client = boto3.client("s3")
@@ -119,9 +127,6 @@ def get_yfinance_data_with_retry(ticker_symbol: str, period: str, max_retries: i
     return pd.DataFrame()
 
 
-# ============================================================
-# 模块 A：TQQQ LRS 策略监控
-# ============================================================
 def get_fred_series_latest(series_id: str, max_retries: int = 3) -> float | None:
     """从 FRED API 获取指定序列的最新数值（带重试降级）"""
     url = "https://api.stlouisfed.org/fred/series/observations"
@@ -147,18 +152,180 @@ def get_fred_series_latest(series_id: str, max_retries: int = 3) -> float | None
             if attempt < max_retries:
                 time.sleep(3)
 
-    # 所有重试失败，降级返回 None（报告中将显示"暂不可用"）
     logger.error(f"FRED {series_id} 全部 {max_retries} 次重试失败，降级处理")
     return None
 
 
-def run_lrs_strategy() -> tuple[str, str | None]:
-    """
-    执行 LRS 策略分析
-    返回: (完整报告文本, 趋势等级 GREEN/YELLOW/RED)
-    """
-    logger.info("[LRS] 正在获取 QQQ 数据...")
+def get_fred_series_history(series_id: str, observation_start: str, max_retries: int = 3) -> list:
+    """从 FRED API 获取指定序列的历史数据（用于计算变动率）"""
+    url = "https://api.stlouisfed.org/fred/series/observations"
+    params = {
+        "series_id": series_id,
+        "api_key": FRED_API_KEY,
+        "file_type": "json",
+        "observation_start": observation_start,
+        "sort_order": "asc",
+    }
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = requests.get(url, params=params, timeout=15)
+            resp.raise_for_status()
+            observations = resp.json().get("observations", [])
+            return [(obs["date"], float(obs["value"])) for obs in observations if obs.get("value", ".") != "."]
+        except Exception as e:
+            logger.warning(f"FRED {series_id} history 第 {attempt} 次请求失败: {e}")
+            if attempt < max_retries:
+                time.sleep(3)
 
+    logger.error(f"FRED {series_id} history 全部重试失败")
+    return []
+
+
+# ============================================================
+# VIX 期货接口与自动展期/换月逻辑
+# ============================================================
+def get_vix_contract_symbols(now: datetime = None) -> tuple[str, str]:
+    """
+    动态计算近月(VIX1)和远月(VIX2)合约代码。
+    CBOE VIX 期货每月第三个周三到期，此处设定每月 18 号之后自动换月进下一个月合约。
+    例如：
+      2026年8月3号 -> VIX1=CBOEVIX2608, VIX2=CBOEVIX2609
+      2026年8月20号 -> VIX1=CBOEVIX2609, VIX2=CBOEVIX2610
+    """
+    if now is None:
+        now = datetime.now()
+
+    # 每月18号之后自动换月到下个月
+    if now.day > 18:
+        if now.month == 12:
+            m1_year, m1_month = now.year + 1, 1
+        else:
+            m1_year, m1_month = now.year, now.month + 1
+    else:
+        m1_year, m1_month = now.year, now.month
+
+    if m1_month == 12:
+        m2_year, m2_month = m1_year + 1, 1
+    else:
+        m2_year, m2_month = m1_year, m1_month + 1
+
+    vix1_symbol = f"CBOEVIX{m1_year % 100:02d}{m1_month:02d}"
+    vix2_symbol = f"CBOEVIX{m2_year % 100:02d}{m2_month:02d}"
+
+    return vix1_symbol, vix2_symbol
+
+
+def fetch_vix_contract_price(symbol: str) -> float | None:
+    """调用阿里云市场 VIX 期货接口获取最新收盘价/现价"""
+    headers = {
+        "Authorization": f"APPCODE {ALIYUN_APPCODE}",
+    }
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    params = {
+        "symbol": symbol,
+        "period": "D",
+        "date": today_str,
+        "withlast": 1,
+    }
+
+    try:
+        resp = requests.get(VIX_API_URL, headers=headers, params=params, timeout=10)
+        if resp.status_code != 200:
+            logger.warning(f"[VIX API] 查询 {symbol} 失败, HTTP状态码: {resp.status_code}")
+            return None
+
+        data = resp.json()
+        logger.info(f"[VIX API] {symbol} 返回原始数据: {data}")
+
+        items = []
+        if isinstance(data, dict):
+            if "data" in data and isinstance(data["data"], list):
+                items = data["data"]
+            elif "result" in data and isinstance(data["result"], list):
+                items = data["result"]
+            elif "list" in data and isinstance(data["list"], list):
+                items = data["list"]
+            elif "showapi_res_body" in data:
+                items = data["showapi_res_body"].get("list", [])
+        elif isinstance(data, list):
+            items = data
+
+        if items:
+            latest = items[-1]
+            if isinstance(latest, dict):
+                for key in ["close", "last", "price", "p", "c", "closePrice"]:
+                    if key in latest and latest[key] is not None:
+                        return float(latest[key])
+
+        return None
+    except Exception as e:
+        logger.error(f"[VIX API] 查询 {symbol} 异常: {e}")
+        return None
+
+
+def get_vix_futures_ratio() -> float | None:
+    """
+    计算 VIX 期货近月与远月比值 (VIX1 / VIX2)
+    比值 > 1.0 表示 Backwardation（贴水/恐慌）
+    """
+    vix1_sym, vix2_sym = get_vix_contract_symbols()
+    logger.info(f"[VIX] 动态计算合约代码: 近月={vix1_sym}, 远月={vix2_sym}")
+
+    p1 = fetch_vix_contract_price(vix1_sym)
+    p2 = fetch_vix_contract_price(vix2_sym)
+
+    if p1 is not None and p2 is not None and p2 > 0:
+        ratio = round(p1 / p2, 4)
+        logger.info(f"[VIX] 获取成功: {vix1_sym}={p1}, {vix2_sym}={p2}, 比值={ratio}")
+        return ratio
+    else:
+        logger.warning(f"[VIX] 获取价格失败: {vix1_sym}={p1}, {vix2_sym}={p2}")
+        return None
+
+
+# ============================================================
+# 模块 A：四维量化状态机
+# ============================================================
+def compute_net_liquidity_change() -> float | None:
+    """
+    计算美联储净流动性 3 个月变动率 (%)
+    Net Liquidity = WALCL - WTREGEN - RRPONTSYD
+    """
+    start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
+
+    walcl_data = get_fred_series_history(FRED_WALCL, start_date)
+    tga_data = get_fred_series_history(FRED_WTREGEN, start_date)
+    rrp_data = get_fred_series_history(FRED_RRPONTSYD, start_date)
+
+    if not walcl_data or not tga_data or not rrp_data:
+        logger.warning("[流动性] 部分 FRED 数据不可用，无法计算净流动性")
+        return None
+
+    walcl_latest = walcl_data[-1][1]
+    tga_latest = tga_data[-1][1]
+    rrp_latest = rrp_data[-1][1]
+    net_latest = walcl_latest - tga_latest - rrp_latest
+
+    walcl_old = walcl_data[0][1]
+    tga_old = tga_data[0][1]
+    rrp_old = rrp_data[0][1]
+    net_old = walcl_old - tga_old - rrp_old
+
+    if net_old == 0:
+        return None
+
+    change_pct = ((net_latest - net_old) / abs(net_old)) * 100
+    return round(change_pct, 2)
+
+
+def run_state_machine() -> tuple[str, str]:
+    """
+    执行四维量化状态机分析
+    返回: (完整报告文本, 状态等级 RED/ORANGE/YELLOW/GREEN)
+    """
+    logger.info("[状态机] 正在获取 QQQ 技术面数据...")
+
+    # ---- 1. 技术面数据 (yfinance) ----
     df = get_yfinance_data_with_retry("QQQ", period=f"{LOOKBACK_DAYS}d")
 
     if df.empty or len(df) < SMA_PERIOD:
@@ -172,72 +339,115 @@ def run_lrs_strategy() -> tuple[str, str | None]:
     sma200 = df["Close"].rolling(window=SMA_PERIOD).mean().iloc[-1]
     atr_series = ta.atr(df["High"], df["Low"], df["Close"], length=ATR_PERIOD)
     atr14 = atr_series.iloc[-1]
-    trigger = sma200 - (ATR_MULTIPLIER * atr14)
+    adx_series = ta.adx(df["High"], df["Low"], df["Close"], length=ADX_PERIOD)
+    adx14 = adx_series[f"ADX_{ADX_PERIOD}"].iloc[-1]
 
-    if close > sma200:
-        trend_status = "🟢 正常上升趋势"
-        trend_level = "GREEN"
-    elif close >= trigger:
-        trend_status = "🟡 进入震荡缓冲带，暂不操作，观察是否发生有效跌破"
-        trend_level = "YELLOW"
+    # 动态止损线
+    stop_level = sma200 - (ATR_MULTIPLIER * atr14)
+
+    # ---- 2. 宏观面数据 (FRED) ----
+    logger.info("[状态机] 正在获取 FRED 宏观面数据...")
+    sahm_value = get_fred_series_latest(FRED_SAHM)
+    hy_oas = get_fred_series_latest(FRED_HY_OAS)
+    t10y2y = get_fred_series_latest(FRED_T10Y2Y)
+    net_liq_change = compute_net_liquidity_change()
+
+    # ---- 3. VIX 期货期限结构（真实 API） ----
+    logger.info("[状态机] 正在获取 VIX 期货数据...")
+    vix_ratio = get_vix_futures_ratio()
+
+    # ============================================================
+    # 状态机决策树（按优先级判断）
+    # ============================================================
+    state = "GREEN"
+    state_reason = ""
+
+    red_triggers = []
+    if sahm_value is not None and sahm_value >= SAHM_THRESHOLD:
+        red_triggers.append(f"萨姆规则 {sahm_value:.2f}% >= {SAHM_THRESHOLD}%")
+    if hy_oas is not None and hy_oas >= HY_OAS_THRESHOLD:
+        red_triggers.append(f"高收益信用利差 {hy_oas:.2f}% >= {HY_OAS_THRESHOLD}%")
+    if net_liq_change is not None and net_liq_change <= NET_LIQUIDITY_DROP_THRESHOLD:
+        red_triggers.append(f"净流动性3月变动 {net_liq_change:.1f}% <= {NET_LIQUIDITY_DROP_THRESHOLD}%")
+    if vix_ratio is not None and vix_ratio > VIX_BACKWARDATION_THRESHOLD:
+        red_triggers.append(f"VIX期货贴水 比值{vix_ratio:.2f} > {VIX_BACKWARDATION_THRESHOLD}")
+
+    if red_triggers:
+        state = "RED"
+        state_reason = "触发条件: " + "; ".join(red_triggers)
+
+    elif close < stop_level:
+        state = "ORANGE"
+        state_reason = f"QQQ {close:.2f} < 动态离场线 {stop_level:.2f} (SMA200 - 2.0*ATR14)"
+
+    elif adx14 < ADX_MONKEY_THRESHOLD:
+        state = "YELLOW"
+        state_reason = f"ADX14 = {adx14:.1f} < {ADX_MONKEY_THRESHOLD}，市场无方向"
+
     else:
-        trend_status = "🔴 有效跌破动态防守线，触发卖出信号！"
-        trend_level = "RED"
+        state = "GREEN"
+        state_reason = f"ADX14 = {adx14:.1f} >= {ADX_MONKEY_THRESHOLD} 且 QQQ {close:.2f} >= SMA200 {sma200:.2f}"
 
-    logger.info("[LRS] 正在获取 FRED 宏观数据...")
-    yield_spread = get_fred_series_latest(FRED_T10Y2Y)
-    fed_rate = get_fred_series_latest(FRED_FED_RATE)
-
-    spread_warning = ""
-    if yield_spread is not None and yield_spread < 0:
-        spread_warning = " ⚠️ 收益率曲线倒挂！"
-
-    rate_comment = ""
-    if fed_rate is not None:
-        if fed_rate >= 5.0:
-            rate_comment = "（高利率紧缩周期）"
-        elif fed_rate >= 3.0:
-            rate_comment = "（中性偏紧周期）"
-        elif fed_rate >= 1.0:
-            rate_comment = "（温和宽松周期）"
-        else:
-            rate_comment = "（极度宽松/零利率周期）"
-
-    if trend_level == "RED":
-        conclusion = "⚡ 立刻将 TQQQ 轮动至 SGOV（短期美债 ETF）进行避险！跌破动态防守线，风险极高。"
-    elif trend_level == "YELLOW" and yield_spread is not None and yield_spread < -0.5:
-        conclusion = "⚠️ 技术面进入缓冲带且利差严重倒挂，建议减仓 TQQQ 50%，密切关注后续走势。"
-    else:
-        conclusion = "✅ 继续全仓持有 TQQQ，趋势完好，无需操作。"
-
+    # ============================================================
+    # 生成报告
+    # ============================================================
     report_date = latest_date.strftime("%Y-%m-%d")
-    spread_str = f"{yield_spread:.2f}%" if yield_spread is not None else "数据暂不可用"
-    rate_str = f"{fed_rate:.2f}%" if fed_rate is not None else "数据暂不可用"
-    safety_margin = ((close - trigger) / close) * 100
+    distance_pct = ((close - stop_level) / close) * 100
 
-    report = f"""📊【LRS 策略复盘报告】日期：{report_date}
+    state_map = {
+        "RED": "🔴 RED - 黑天鹅/衰退紧急熔断",
+        "ORANGE": "🟠 ORANGE - 技术面破位止损",
+        "YELLOW": "🟡 YELLOW - 猴市震荡防磨损",
+        "GREEN": "🟢 GREEN - 主升浪全速进攻",
+    }
+    action_map = {
+        "RED": "100% SGOV 避险",
+        "ORANGE": "100% SGOV 离场",
+        "YELLOW": "100% QQQ (降杠杆避磨损)",
+        "GREEN": "100% TQQQ 持有",
+    }
+
+    sahm_str = f"{sahm_value:.2f}%" if sahm_value is not None else "数据暂不可用"
+    hy_str = f"{hy_oas * 100:.0f} 个基点" if hy_oas is not None else "数据暂不可用"
+    t10y2y_str = f"{t10y2y:.2f}%" if t10y2y is not None else "数据暂不可用"
+    liq_str = f"{"正" if net_liq_change >= 0 else "负"} {abs(net_liq_change):.1f}%" if net_liq_change is not None else "数据暂不可用"
+    vix_str = f"{vix_ratio:.2f}，{"⚠️ 贴水(恐慌)" if vix_ratio > 1.0 else "升水正常，无机构恐慌"}" if vix_ratio is not None else "数据暂不可用"
+
+    if adx14 >= 25:
+        adx_comment = "强单边趋势"
+    elif adx14 >= 20:
+        adx_comment = "处于单边趋势"
+    else:
+        adx_comment = "无方向猴市"
+
+    report = f"""📊【四维量化状态机报告】日期：{report_date}
+
+当前推荐状态：{state_map[state]}
+建议动作：{action_map[state]}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+实时监控面板数据：
 
-一、技术面与动态防守线计算
-• QQQ 最新收盘价：${close:.2f}
-• 200日均线 (SMA200)：${sma200:.2f}
-• 14日 ATR：${atr14:.2f}
-• 动态防守触发价：${trigger:.2f}
-• 距防守线安全距离：{safety_margin:.1f}%
-• 当前趋势状态：{trend_status}
-
-二、宏观面监控
-• 10Y-2Y 美债利差：{spread_str}{spread_warning}
-• 联邦基金利率上限：{rate_str} {rate_comment}
-
-三、今日操作结论
-💡 {conclusion}
+● QQQ 现价：${close:.2f} 美元
+● 二百日均线：${sma200:.2f} 美元
+● 十四日真实波幅：${atr14:.2f} 美元
+● 动态离场线：${stop_level:.2f} 美元，当前价格{"高于" if distance_pct >= 0 else "低于"}离场线 {abs(distance_pct):.1f}%
+● 趋势强度 ADX：{adx14:.1f}，{adx_comment}
+● 萨姆规则数值：{sahm_str}，{"⚠️ 超过" if sahm_value is not None and sahm_value >= SAHM_THRESHOLD else "低于"} {SAHM_THRESHOLD}% 衰退线
+● 高收益信用利差：{hy_str}，{"⚠️ 超过" if hy_oas is not None and hy_oas >= HY_OAS_THRESHOLD else "低于"} {HY_OAS_THRESHOLD * 100:.0f} 个基点警戒线
+● VIX 期限结构比值：{vix_str}
+● 美联储净流动性三个月变动：{liq_str}，{"⚠️ 资金面恶化" if net_liq_change is not None and net_liq_change <= NET_LIQUIDITY_DROP_THRESHOLD else "资金面健康"}
+● 10Y-2Y 美债利差：{t10y2y_str}{"  ⚠️ 收益率曲线倒挂" if t10y2y is not None and t10y2y < 0 else ""}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🤖 LRS Monitor v2.1 | Powered by yfinance + FRED"""
+决策依据：{state_reason}
 
-    return report, trend_level
+操作建议：{"今日无需调仓，继续持有 TQQQ。" if state == "GREEN" else "⚡ 请立即调仓！" + action_map[state]}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🤖 State Machine v3.1 | Powered by yfinance + FRED + Aliyun VIX"""
+
+    return report, state
 
 
 # ============================================================
@@ -272,7 +482,7 @@ def save_qdii_history(history: list):
 
 
 def run_qdii_monitor():
-    """执行 QDII 基金公告监控"""
+    """执行 QDII 基金公告监控（仅景顺长城全球半导体芯片）"""
     logger.info(f"[QDII] 开始扫描基金公告 (过滤 {CUTOFF_DATE_STR} 之前的数据)...")
 
     history = load_qdii_history()
@@ -334,7 +544,7 @@ def run_qdii_monitor():
                 elif "季度报告" in title or "年度报告" in title:
                     is_trigger = True
                     emoji = "📄"
-                elif fund_code == "160213" and ("非交易日" in title or "节假日" in title):
+                elif "非交易日" in title or "节假日" in title:
                     is_trigger = True
                     emoji = "☀️"
 
@@ -372,31 +582,34 @@ def run_qdii_monitor():
 def lambda_handler(event, context):
     """
     AWS Lambda 标准入口
-    顺序执行两个监控模块，各自独立，互不影响。
     仅在工作日 (MON-FRI) UTC 02:00 被 EventBridge 触发。
     """
-    logger.info("====== 统一监控系统启动 ======")
+    logger.info("====== 统一监控系统 v3.1 启动 ======")
     results = {}
 
-    # ---- 模块 A：LRS TQQQ 策略 ----
+    # ---- 模块 A：四维量化状态机 ----
     try:
-        report, trend_level = run_lrs_strategy()
+        report, state = run_state_machine()
 
-        if trend_level == "GREEN":
-            # 绿色安全期触发静默模式，不打扰用户
-            logger.info("[LRS] 当前处于绿色安全期，触发静默模式，不发送 Bark 推送。")
-            logger.info(f"[LRS] 报告内容:\n{report}")
-            results["lrs"] = "success_silent"
-        else:
-            # YELLOW 或 RED 状态发送预警
-            send_bark("⚠️ LRS 策略预警", report, "量化监控")
-            results["lrs"] = "success_notified"
+        if state == "GREEN":
+            logger.info("[状态机] GREEN 绿色静默模式，不发送 Bark 推送。")
+            logger.info(f"[状态机] 报告内容:\n{report}")
+            results["state_machine"] = "GREEN_silent"
+        elif state == "YELLOW":
+            send_bark("⚠️ [YELLOW] 市场进入猴市震荡", report, "量化监控")
+            results["state_machine"] = "YELLOW_notified"
+        elif state == "ORANGE":
+            send_bark("⚠️ [ORANGE] 技术线破位止损", report, "量化监控")
+            results["state_machine"] = "ORANGE_notified"
+        elif state == "RED":
+            send_bark("⚠️ [RED ALERT] 黑天鹅/衰退紧急熔断", report, "量化监控")
+            results["state_machine"] = "RED_notified"
 
     except Exception as e:
-        error_msg = f"⚠️ LRS 监控异常\n\n错误类型: {type(e).__name__}\n错误详情: {str(e)}"
-        logger.error(f"[LRS] 运行异常: {e}", exc_info=True)
-        send_bark("⚠️ LRS 监控异常", error_msg, "量化监控")
-        results["lrs"] = f"error: {e}"
+        error_msg = f"⚠️ 状态机监控异常\n\n错误类型: {type(e).__name__}\n错误详情: {str(e)}"
+        logger.error(f"[状态机] 运行异常: {e}", exc_info=True)
+        send_bark("⚠️ 状态机监控异常", error_msg, "量化监控")
+        results["state_machine"] = f"error: {e}"
 
     # ---- 模块 B：QDII 基金公告 ----
     try:
