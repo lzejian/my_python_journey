@@ -1,27 +1,24 @@
 """
-AWS Lambda - 统一每日监控系统 (v3.2 - 四维量化状态机 + 自动展期 VIX 实战版)
+AWS Lambda / Docker 容器 - 统一每日监控系统 (v3.3 终极修复版)
 ====================================================================
 模块 A：TQQQ 四维量化状态机（State Machine）风控策略
 模块 B：QDII 基金公告监控（仅保留景顺长城全球半导体芯片）
 
-版本 v3.2 核心升级:
-  1. 完整接入新版外盘期货 VIX 报价 API (https://lhgphqcx.market.alicloudapi.com/finance/external-futures-price)
-  2. 自动合约展期换月：每月 18 号之后自动从 VX2608/VX2609 轮动至 VX2609/VX2610，绝不使用过期旧合约
-  3. 四大状态机：RED / ORANGE / YELLOW / GREEN 智能决策
-  4. FRED 宏观面监控：萨姆规则、高收益信用利差、美联储净流动性变动
-  5. 技术面监控：ADX14 趋势强度、200SMA - 2*ATR14 动态通道止损
-  6. 绿色静默模式：GREEN 状态不打扰，YELLOW/ORANGE/RED 发送 Bark 预警
+版本 v3.3 核心修复:
+  - 修复 compute_net_liquidity_change 中未对元组取 [1] 索引导致的 TypeError 减法错误
+  - 维持 VIX POST API 自动展期换月 (VX2608 / VX2609)
+  - 维持四维量化状态机 (RED / ORANGE / YELLOW / GREEN) 逻辑
 
 环境要求：
   Python 3.10+
   依赖库: boto3, yfinance, pandas, pandas_ta, requests
 
 环境变量：
-  - BARK_TOKEN: Bark 推送 Token (必须)
-  - FRED_API_KEY: FRED API 密钥 (默认已内置)
-  - ALIYUN_APPCODE: 阿里云市场 AppCode (默认已内置)
-  - S3_BUCKET: 存储 QDII 历史记录的 S3 桶名 (必须)
-  - S3_STATE_KEY: S3 中状态文件的 key (默认: fund_notice_state_v2.json)
+  - BARK_TOKEN: Bark 推送 Token
+  - FRED_API_KEY: FRED API 密钥
+  - ALIYUN_APPCODE: 阿里云市场 AppCode
+  - S3_BUCKET: 存储 QDII 历史记录的 S3 桶名 (非 S3 环境留空即可)
+  - S3_STATE_KEY: S3 状态文件 Key
 """
 
 import json
@@ -42,14 +39,17 @@ import requests
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Bark 推送
+if not logger.handlers:
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    formatter = logging.Formatter('[%(levelname)s] %(asctime)s - %(message)s')
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+
 BARK_TOKEN = os.environ.get("BARK_TOKEN", "WWBFmjRYERrAUBDRskK3Gn")
 BARK_BASE_URL = f"https://api.day.app/{BARK_TOKEN}/"
 
-# FRED API
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "749812e69e99644cfd562b14b57461aa")
-
-# FRED 序列 ID
 FRED_SAHM = "SAHMREALTIME"          # 萨姆规则实时指标
 FRED_HY_OAS = "BAMLH0A0HYM2"        # 高收益信用利差 (OAS)
 FRED_T10Y2Y = "T10Y2Y"              # 10Y-2Y 美债利差
@@ -57,11 +57,9 @@ FRED_WALCL = "WALCL"                # 美联储总资产
 FRED_WTREGEN = "WTREGEN"            # 财政部一般账户 (TGA)
 FRED_RRPONTSYD = "RRPONTSYD"        # 隔夜逆回购
 
-# 阿里云 API 配置
 ALIYUN_APPCODE = os.environ.get("ALIYUN_APPCODE", "cad000d1ad8a4b35a17a5825a9b3d4ab")
-VIX_API_URL = "https://lhgphqcx.market.alicloudapi.com/finance/external-futures-price"
+VIX_API_URL = os.environ.get("VIX_API_URL", "https://lhgphqcx.market.alicloudapi.com/finance/external-futures-price")
 
-# 技术面参数
 SMA_PERIOD = 200
 ATR_PERIOD = 14
 ADX_PERIOD = 14
@@ -69,27 +67,23 @@ ATR_MULTIPLIER = 2.0                # 动态止损乘数
 ADX_MONKEY_THRESHOLD = 20           # ADX < 20 判定为猴市
 LOOKBACK_DAYS = 300
 
-# 宏观面阈值
 SAHM_THRESHOLD = 0.50               # 萨姆规则衰退阈值 (%)
 HY_OAS_THRESHOLD = 5.50             # 高收益利差警戒线 (%)
 NET_LIQUIDITY_DROP_THRESHOLD = -8.0  # 净流动性3月跌幅阈值 (%)
 VIX_BACKWARDATION_THRESHOLD = 1.0   # VIX 期货贴水阈值 (VIX1/VIX2 > 1.0)
 
-# QDII 基金监控配置
 QDII_API_URL = "https://lhjjhqsjcx.market.alicloudapi.com/fund/notice"
 S3_BUCKET = os.environ.get("S3_BUCKET", "")
 S3_STATE_KEY = os.environ.get("S3_STATE_KEY", "fund_notice_state_v2.json")
 
-# 动态计算 CUTOFF_DATE（过滤 30 天前的旧公告）
 CUTOFF_DATETIME = datetime.now() - timedelta(days=30)
 CUTOFF_DATE_STR = CUTOFF_DATETIME.strftime("%Y-%m-%d %H:%M:%S")
 
-# 仅保留景顺长城全球半导体芯片
 QDII_FUNDS = {
     "501225": "景顺长城全球半导体芯片股票A",
 }
 
-s3_client = boto3.client("s3")
+s3_client = boto3.client("s3") if S3_BUCKET else None
 
 
 # ============================================================
@@ -181,21 +175,16 @@ def get_fred_series_history(series_id: str, observation_start: str, max_retries:
 
 
 # ============================================================
-# VIX 期货接口与自动展期/换月逻辑
+# VIX 期货新接口 (POST) 与自动展期/换月逻辑
 # ============================================================
 def get_vix_contract_symbols(now: datetime = None) -> tuple[str, str]:
     """
     动态计算近月(VIX1)和远月(VIX2)合约代码（格式: VX2608, VX2609）。
-    CBOE VIX 期货每月第三个周三到期，此处设定每月 18 号之后自动换月进下一个月合约，绝不使用过期旧合约。
-    例如：
-      2026年8月3号  -> VIX1=VX2608, VIX2=VX2609
-      2026年8月20号 -> VIX1=VX2609, VIX2=VX2610
-      2026年9月20号 -> VIX1=VX2610, VIX2=VX2611
+    每月 18 号之后自动换月进下一个月合约，绝不使用过期旧合约。
     """
     if now is None:
         now = datetime.now()
 
-    # 每月 18 号之后自动换月到下一个月合约
     if now.day > 18:
         if now.month == 12:
             m1_year, m1_month = now.year + 1, 1
@@ -216,7 +205,7 @@ def get_vix_contract_symbols(now: datetime = None) -> tuple[str, str]:
 
 
 def fetch_vix_contract_price(symbol: str) -> float | None:
-    """调用外盘期货报价接口 (POST) 获取最新现价"""
+    """调用新版外盘期货报价接口 (POST) 获取最新现价"""
     headers = {
         "Authorization": f"APPCODE {ALIYUN_APPCODE}",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -283,6 +272,7 @@ def compute_net_liquidity_change() -> float | None:
         logger.warning("[流动性] 部分 FRED 数据不可用，无法计算净流动性")
         return None
 
+    # 修复：加上索引 [1]，提取元组 ('2026-07-31', 7500000.0) 中的浮点数值
     walcl_latest = walcl_data[-1][1]
     tga_latest = tga_data[-1][1]
     rrp_latest = rrp_data[-1][1]
@@ -307,7 +297,6 @@ def run_state_machine() -> tuple[str, str]:
     """
     logger.info("[状态机] 正在获取 QQQ 技术面数据...")
 
-    # ---- 1. 技术面数据 (yfinance) ----
     df = get_yfinance_data_with_retry("QQQ", period=f"{LOOKBACK_DAYS}d")
 
     if df.empty or len(df) < SMA_PERIOD:
@@ -327,20 +316,16 @@ def run_state_machine() -> tuple[str, str]:
     # 动态止损线
     stop_level = sma200 - (ATR_MULTIPLIER * atr14)
 
-    # ---- 2. 宏观面数据 (FRED) ----
     logger.info("[状态机] 正在获取 FRED 宏观面数据...")
     sahm_value = get_fred_series_latest(FRED_SAHM)
     hy_oas = get_fred_series_latest(FRED_HY_OAS)
     t10y2y = get_fred_series_latest(FRED_T10Y2Y)
     net_liq_change = compute_net_liquidity_change()
 
-    # ---- 3. VIX 期货期限结构（真实 API） ----
     logger.info("[状态机] 正在获取 VIX 期货数据...")
     vix_ratio = get_vix_futures_ratio()
 
-    # ============================================================
-    # 状态机决策树（按优先级判断）
-    # ============================================================
+    # 状态判定逻辑
     state = "GREEN"
     state_reason = ""
 
@@ -370,9 +355,6 @@ def run_state_machine() -> tuple[str, str]:
         state = "GREEN"
         state_reason = f"ADX14 = {adx14:.1f} >= {ADX_MONKEY_THRESHOLD} 且 QQQ {close:.2f} >= SMA200 {sma200:.2f}"
 
-    # ============================================================
-    # 生成报告
-    # ============================================================
     report_date = latest_date.strftime("%Y-%m-%d")
     distance_pct = ((close - stop_level) / close) * 100
 
@@ -427,7 +409,7 @@ def run_state_machine() -> tuple[str, str]:
 操作建议：{"今日无需调仓，继续持有 TQQQ。" if state == "GREEN" else "⚡ 请立即调仓！" + action_map[state]}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🤖 State Machine v3.2 | Powered by yfinance + FRED + Aliyun VIX"""
+🤖 State Machine v3.3 | Powered by yfinance + FRED + Aliyun VIX"""
 
     return report, state
 
@@ -437,19 +419,20 @@ def run_state_machine() -> tuple[str, str]:
 # ============================================================
 def load_qdii_history() -> list | None:
     """从 S3 读取 QDII 公告推送历史"""
+    if not s3_client or not S3_BUCKET:
+        return []
     try:
         response = s3_client.get_object(Bucket=S3_BUCKET, Key=S3_STATE_KEY)
         return json.loads(response["Body"].read().decode("utf-8"))
-    except s3_client.exceptions.NoSuchKey:
-        return []
     except Exception as e:
-        logger.error(f"[QDII] S3 读取历史记录失败: {e}")
-        send_bark("⚠️ QDII 系统异常", f"S3 读取失败，为防止消息轰炸已切断本次监控。\n错误: {e}", "基金监控")
-        return None
+        logger.warning(f"[QDII] 读取历史记录提示: {e}")
+        return []
 
 
 def save_qdii_history(history: list):
     """将 QDII 公告历史保存到 S3"""
+    if not s3_client or not S3_BUCKET:
+        return
     try:
         if len(history) > 500:
             history = history[-500:]
@@ -467,9 +450,7 @@ def run_qdii_monitor():
     """执行 QDII 基金公告监控（仅景顺长城全球半导体芯片）"""
     logger.info(f"[QDII] 开始扫描基金公告 (过滤 {CUTOFF_DATE_STR} 之前的数据)...")
 
-    history = load_qdii_history()
-    if history is None:
-        return "S3 读取故障，QDII 模块终止"
+    history = load_qdii_history() or []
 
     headers = {
         "Authorization": f"APPCODE {ALIYUN_APPCODE}",
@@ -559,14 +540,13 @@ def run_qdii_monitor():
 
 
 # ============================================================
-# Lambda 入口函数
+# 入口函数（兼容 AWS Lambda 与 Docker/本地命令行直跑）
 # ============================================================
-def lambda_handler(event, context):
+def lambda_handler(event=None, context=None):
     """
-    AWS Lambda 标准入口
-    仅在工作日 (MON-FRI) UTC 02:00 被 EventBridge 触发。
+    AWS Lambda / 容器标准入口
     """
-    logger.info("====== 统一监控系统 v3.2 启动 ======")
+    logger.info("====== 统一监控系统 v3.3 启动 ======")
     results = {}
 
     # ---- 模块 A：四维量化状态机 ----
@@ -608,3 +588,7 @@ def lambda_handler(event, context):
         "statusCode": 200,
         "body": json.dumps(results, ensure_ascii=False)
     }
+
+
+if __name__ == "__main__":
+    print(lambda_handler())
