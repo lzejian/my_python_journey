@@ -1,24 +1,13 @@
 """
-AWS Lambda / Docker 容器 - 统一每日监控系统 (v3.3 终极修复版)
+AWS Lambda / Docker 容器 - 统一每日监控系统 (v3.4 终极修复版)
 ====================================================================
 模块 A：TQQQ 四维量化状态机（State Machine）风控策略
 模块 B：QDII 基金公告监控（仅保留景顺长城全球半导体芯片）
 
-版本 v3.3 核心修复:
-  - 修复 compute_net_liquidity_change 中未对元组取 [1] 索引导致的 TypeError 减法错误
-  - 维持 VIX POST API 自动展期换月 (VX2608 / VX2609)
-  - 维持四维量化状态机 (RED / ORANGE / YELLOW / GREEN) 逻辑
-
-环境要求：
-  Python 3.10+
-  依赖库: boto3, yfinance, pandas, pandas_ta, requests
-
-环境变量：
-  - BARK_TOKEN: Bark 推送 Token
-  - FRED_API_KEY: FRED API 密钥
-  - ALIYUN_APPCODE: 阿里云市场 AppCode
-  - S3_BUCKET: 存储 QDII 历史记录的 S3 桶名 (非 S3 环境留空即可)
-  - S3_STATE_KEY: S3 状态文件 Key
+版本 v3.4 核心修复:
+  - 修复 yfinance 在 Lambda 只读文件系统下的 Cache 报错问题
+  - 重构 compute_net_liquidity_change，使用 pandas 解决 FRED 不同指标
+    (日更 vs 周更) 导致的时间序列错位计算问题 (逻辑性修复)
 """
 
 import json
@@ -34,7 +23,7 @@ import pandas_ta as ta
 import requests
 
 # ============================================================
-# 全局配置
+# 全局配置 & 环境初始化
 # ============================================================
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -46,6 +35,9 @@ if not logger.handlers:
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
+# 修复 Lambda 环境下 yfinance 缓存报错 (Read-only file system)
+yf.set_tz_cache_location("/tmp/yfinance_tz_cache")
+
 BARK_TOKEN = os.environ.get("BARK_TOKEN", "WWBFmjRYERrAUBDRskK3Gn")
 BARK_BASE_URL = f"https://api.day.app/{BARK_TOKEN}/"
 
@@ -53,9 +45,9 @@ FRED_API_KEY = os.environ.get("FRED_API_KEY", "749812e69e99644cfd562b14b57461aa"
 FRED_SAHM = "SAHMREALTIME"          # 萨姆规则实时指标
 FRED_HY_OAS = "BAMLH0A0HYM2"        # 高收益信用利差 (OAS)
 FRED_T10Y2Y = "T10Y2Y"              # 10Y-2Y 美债利差
-FRED_WALCL = "WALCL"                # 美联储总资产
+FRED_WALCL = "WALCL"                # 美联储总资产 (周更)
 FRED_WTREGEN = "WTREGEN"            # 财政部一般账户 (TGA)
-FRED_RRPONTSYD = "RRPONTSYD"        # 隔夜逆回购
+FRED_RRPONTSYD = "RRPONTSYD"        # 隔夜逆回购 (日更)
 
 ALIYUN_APPCODE = os.environ.get("ALIYUN_APPCODE", "cad000d1ad8a4b35a17a5825a9b3d4ab")
 VIX_API_URL = os.environ.get("VIX_API_URL", "https://lhgphqcx.market.alicloudapi.com/finance/external-futures-price")
@@ -90,7 +82,6 @@ s3_client = boto3.client("s3") if S3_BUCKET else None
 # 公共工具函数
 # ============================================================
 def send_bark(title: str, body: str, group: str = "量化监控") -> bool:
-    """通过 Bark API 推送消息到手机"""
     try:
         payload = {"title": title, "body": body, "group": group}
         resp = requests.post(BARK_BASE_URL, json=payload, timeout=10)
@@ -103,7 +94,6 @@ def send_bark(title: str, body: str, group: str = "量化监控") -> bool:
 
 
 def get_yfinance_data_with_retry(ticker_symbol: str, period: str, max_retries: int = 3) -> pd.DataFrame:
-    """带重试机制的 yfinance 数据获取函数"""
     for attempt in range(1, max_retries + 1):
         try:
             ticker = yf.Ticker(ticker_symbol)
@@ -116,12 +106,10 @@ def get_yfinance_data_with_retry(ticker_symbol: str, period: str, max_retries: i
 
         if attempt < max_retries:
             time.sleep(3)
-
     return pd.DataFrame()
 
 
 def get_fred_series_latest(series_id: str, max_retries: int = 3) -> float | None:
-    """从 FRED API 获取指定序列的最新数值（带重试降级）"""
     url = "https://api.stlouisfed.org/fred/series/observations"
     params = {
         "series_id": series_id,
@@ -144,13 +132,11 @@ def get_fred_series_latest(series_id: str, max_retries: int = 3) -> float | None
             logger.warning(f"FRED {series_id} 第 {attempt} 次请求失败: {e}")
             if attempt < max_retries:
                 time.sleep(3)
-
     logger.error(f"FRED {series_id} 全部 {max_retries} 次重试失败，降级处理")
     return None
 
 
 def get_fred_series_history(series_id: str, observation_start: str, max_retries: int = 3) -> list:
-    """从 FRED API 获取指定序列的历史数据（用于计算变动率）"""
     url = "https://api.stlouisfed.org/fred/series/observations"
     params = {
         "series_id": series_id,
@@ -169,7 +155,6 @@ def get_fred_series_history(series_id: str, observation_start: str, max_retries:
             logger.warning(f"FRED {series_id} history 第 {attempt} 次请求失败: {e}")
             if attempt < max_retries:
                 time.sleep(3)
-
     logger.error(f"FRED {series_id} history 全部重试失败")
     return []
 
@@ -178,10 +163,6 @@ def get_fred_series_history(series_id: str, observation_start: str, max_retries:
 # VIX 期货新接口 (POST) 与自动展期/换月逻辑
 # ============================================================
 def get_vix_contract_symbols(now: datetime = None) -> tuple[str, str]:
-    """
-    动态计算近月(VIX1)和远月(VIX2)合约代码（格式: VX2608, VX2609）。
-    每月 18 号之后自动换月进下一个月合约，绝不使用过期旧合约。
-    """
     if now is None:
         now = datetime.now()
 
@@ -200,34 +181,25 @@ def get_vix_contract_symbols(now: datetime = None) -> tuple[str, str]:
 
     vix1_symbol = f"VX{m1_year % 100:02d}{m1_month:02d}"
     vix2_symbol = f"VX{m2_year % 100:02d}{m2_month:02d}"
-
     return vix1_symbol, vix2_symbol
 
 
 def fetch_vix_contract_price(symbol: str) -> float | None:
-    """调用新版外盘期货报价接口 (POST) 获取最新现价"""
     headers = {
         "Authorization": f"APPCODE {ALIYUN_APPCODE}",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
     }
-    payload = {
-        "symbol": symbol,
-    }
-
+    payload = {"symbol": symbol}
     try:
         resp = requests.post(VIX_API_URL, headers=headers, data=payload, timeout=10)
         if resp.status_code != 200:
             logger.warning(f"[VIX API] 查询 {symbol} 失败, HTTP 状态码: {resp.status_code}")
             return None
-
         res_json = resp.json()
-        logger.info(f"[VIX API] {symbol} 返回数据: {res_json}")
-
         if res_json.get("code") == 200 or res_json.get("success") is True:
             data = res_json.get("data", {})
             if isinstance(data, dict) and "price" in data:
                 return float(data["price"])
-
         return None
     except Exception as e:
         logger.error(f"[VIX API] 查询 {symbol} 异常: {e}")
@@ -235,13 +207,8 @@ def fetch_vix_contract_price(symbol: str) -> float | None:
 
 
 def get_vix_futures_ratio() -> float | None:
-    """
-    计算 VIX 期货近月与远月比值 (VIX1 / VIX2)
-    比值 > 1.0 表示 Backwardation（贴水/恐慌）
-    """
     vix1_sym, vix2_sym = get_vix_contract_symbols()
     logger.info(f"[VIX] 动态计算合约代码: 近月={vix1_sym}, 远月={vix2_sym}")
-
     p1 = fetch_vix_contract_price(vix1_sym)
     p2 = fetch_vix_contract_price(vix2_sym)
 
@@ -261,6 +228,7 @@ def compute_net_liquidity_change() -> float | None:
     """
     计算美联储净流动性 3 个月变动率 (%)
     Net Liquidity = WALCL - WTREGEN - RRPONTSYD
+    修复逻辑：使用 pandas DataFrame 对齐日期，处理多频数据 (日/周)。
     """
     start_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
 
@@ -272,29 +240,40 @@ def compute_net_liquidity_change() -> float | None:
         logger.warning("[流动性] 部分 FRED 数据不可用，无法计算净流动性")
         return None
 
-    # 修复：加上索引 [1]，提取元组 ('2026-07-31', 7500000.0) 中的浮点数值
-    walcl_latest = walcl_data[-1][1]
-    tga_latest = tga_data[-1][1]
-    rrp_latest = rrp_data[-1][1]
-    net_latest = walcl_latest - tga_latest - rrp_latest
+    try:
+        # 1. 转换为 DataFrame，设置日期为索引
+        df_walcl = pd.DataFrame(walcl_data, columns=["date", "WALCL"]).set_index("date")
+        df_tga = pd.DataFrame(tga_data, columns=["date", "TGA"]).set_index("date")
+        df_rrp = pd.DataFrame(rrp_data, columns=["date", "RRP"]).set_index("date")
 
-    walcl_old = walcl_data[0][1]
-    tga_old = tga_data[0][1]
-    rrp_old = rrp_data[0][1]
-    net_old = walcl_old - tga_old - rrp_old
+        # 2. 合并数据表 (outer join 保证所有日期保留)
+        df = df_walcl.join([df_tga, df_rrp], how="outer")
 
-    if net_old == 0:
+        # 3. 时间序列向前填充 (ffill)
+        # WALCL 通常周三发布，其他日子会空缺，所以需要把周三的数据延续到接下来的日子
+        df = df.ffill().dropna()
+
+        if df.empty:
+            logger.warning("[流动性] 数据对齐后为空，无法计算")
+            return None
+
+        # 4. 计算每日净流动性
+        df["Net_Liquidity"] = df["WALCL"] - df["TGA"] - df["RRP"]
+
+        net_old = df["Net_Liquidity"].iloc[0]
+        net_latest = df["Net_Liquidity"].iloc[-1]
+
+        if net_old == 0:
+            return None
+
+        change_pct = ((net_latest - net_old) / abs(net_old)) * 100
+        return round(change_pct, 2)
+    except Exception as e:
+        logger.error(f"[流动性] 变动率计算异常: {e}")
         return None
-
-    change_pct = ((net_latest - net_old) / abs(net_old)) * 100
-    return round(change_pct, 2)
 
 
 def run_state_machine() -> tuple[str, str]:
-    """
-    执行四维量化状态机分析
-    返回: (完整报告文本, 状态等级 RED/ORANGE/YELLOW/GREEN)
-    """
     logger.info("[状态机] 正在获取 QQQ 技术面数据...")
 
     df = get_yfinance_data_with_retry("QQQ", period=f"{LOOKBACK_DAYS}d")
@@ -313,7 +292,6 @@ def run_state_machine() -> tuple[str, str]:
     adx_series = ta.adx(df["High"], df["Low"], df["Close"], length=ADX_PERIOD)
     adx14 = adx_series[f"ADX_{ADX_PERIOD}"].iloc[-1]
 
-    # 动态止损线
     stop_level = sma200 - (ATR_MULTIPLIER * atr14)
 
     logger.info("[状态机] 正在获取 FRED 宏观面数据...")
@@ -325,11 +303,10 @@ def run_state_machine() -> tuple[str, str]:
     logger.info("[状态机] 正在获取 VIX 期货数据...")
     vix_ratio = get_vix_futures_ratio()
 
-    # 状态判定逻辑
     state = "GREEN"
     state_reason = ""
-
     red_triggers = []
+    
     if sahm_value is not None and sahm_value >= SAHM_THRESHOLD:
         red_triggers.append(f"萨姆规则 {sahm_value:.2f}% >= {SAHM_THRESHOLD}%")
     if hy_oas is not None and hy_oas >= HY_OAS_THRESHOLD:
@@ -342,15 +319,12 @@ def run_state_machine() -> tuple[str, str]:
     if red_triggers:
         state = "RED"
         state_reason = "触发条件: " + "; ".join(red_triggers)
-
     elif close < stop_level:
         state = "ORANGE"
         state_reason = f"QQQ {close:.2f} < 动态离场线 {stop_level:.2f} (SMA200 - 2.0*ATR14)"
-
     elif adx14 < ADX_MONKEY_THRESHOLD:
         state = "YELLOW"
         state_reason = f"ADX14 = {adx14:.1f} < {ADX_MONKEY_THRESHOLD}，市场无方向"
-
     else:
         state = "GREEN"
         state_reason = f"ADX14 = {adx14:.1f} >= {ADX_MONKEY_THRESHOLD} 且 QQQ {close:.2f} >= SMA200 {sma200:.2f}"
@@ -377,12 +351,7 @@ def run_state_machine() -> tuple[str, str]:
     liq_str = f"{'正' if net_liq_change >= 0 else '负'} {abs(net_liq_change):.1f}%" if net_liq_change is not None else "数据暂不可用"
     vix_str = f"{vix_ratio:.2f}，{'⚠️ 贴水(恐慌)' if vix_ratio > 1.0 else '升水正常，无机构恐慌'}" if vix_ratio is not None else "数据暂不可用"
 
-    if adx14 >= 25:
-        adx_comment = "强单边趋势"
-    elif adx14 >= 20:
-        adx_comment = "处于单边趋势"
-    else:
-        adx_comment = "无方向猴市"
+    adx_comment = "强单边趋势" if adx14 >= 25 else "处于单边趋势" if adx14 >= 20 else "无方向猴市"
 
     report = f"""📊【四维量化状态机报告】日期：{report_date}
 
@@ -409,7 +378,7 @@ def run_state_machine() -> tuple[str, str]:
 操作建议：{"今日无需调仓，继续持有 TQQQ。" if state == "GREEN" else "⚡ 请立即调仓！" + action_map[state]}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🤖 State Machine v3.3 | Powered by yfinance + FRED + Aliyun VIX"""
+🤖 State Machine v3.4 | Powered by yfinance + FRED + Aliyun VIX"""
 
     return report, state
 
@@ -418,7 +387,6 @@ def run_state_machine() -> tuple[str, str]:
 # 模块 B：QDII 基金公告监控
 # ============================================================
 def load_qdii_history() -> list | None:
-    """从 S3 读取 QDII 公告推送历史"""
     if not s3_client or not S3_BUCKET:
         return []
     try:
@@ -430,7 +398,6 @@ def load_qdii_history() -> list | None:
 
 
 def save_qdii_history(history: list):
-    """将 QDII 公告历史保存到 S3"""
     if not s3_client or not S3_BUCKET:
         return
     try:
@@ -447,16 +414,13 @@ def save_qdii_history(history: list):
 
 
 def run_qdii_monitor():
-    """执行 QDII 基金公告监控（仅景顺长城全球半导体芯片）"""
     logger.info(f"[QDII] 开始扫描基金公告 (过滤 {CUTOFF_DATE_STR} 之前的数据)...")
 
     history = load_qdii_history() or []
-
     headers = {
         "Authorization": f"APPCODE {ALIYUN_APPCODE}",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
     }
-
     new_notices_found = []
 
     for fund_code, fund_name in QDII_FUNDS.items():
@@ -519,7 +483,6 @@ def run_qdii_monitor():
                         "emoji": emoji,
                         "unique_id": unique_id,
                     })
-
         except Exception as e:
             logger.error(f"[QDII] 查询 {fund_code} 时发生错误: {e}")
 
@@ -540,19 +503,14 @@ def run_qdii_monitor():
 
 
 # ============================================================
-# 入口函数（兼容 AWS Lambda 与 Docker/本地命令行直跑）
+# 入口函数
 # ============================================================
 def lambda_handler(event=None, context=None):
-    """
-    AWS Lambda / 容器标准入口
-    """
-    logger.info("====== 统一监控系统 v3.3 启动 ======")
+    logger.info("====== 统一监控系统 v3.4 启动 ======")
     results = {}
 
-    # ---- 模块 A：四维量化状态机 ----
     try:
         report, state = run_state_machine()
-
         if state == "GREEN":
             logger.info("[状态机] GREEN 绿色静默模式，不发送 Bark 推送。")
             logger.info(f"[状态机] 报告内容:\n{report}")
@@ -566,14 +524,12 @@ def lambda_handler(event=None, context=None):
         elif state == "RED":
             send_bark("⚠️ [RED ALERT] 黑天鹅/衰退紧急熔断", report, "量化监控")
             results["state_machine"] = "RED_notified"
-
     except Exception as e:
         error_msg = f"⚠️ 状态机监控异常\n\n错误类型: {type(e).__name__}\n错误详情: {str(e)}"
         logger.error(f"[状态机] 运行异常: {e}", exc_info=True)
         send_bark("⚠️ 状态机监控异常", error_msg, "量化监控")
         results["state_machine"] = f"error: {e}"
 
-    # ---- 模块 B：QDII 基金公告 ----
     try:
         qdii_result = run_qdii_monitor()
         results["qdii"] = qdii_result
@@ -588,7 +544,6 @@ def lambda_handler(event=None, context=None):
         "statusCode": 200,
         "body": json.dumps(results, ensure_ascii=False)
     }
-
 
 if __name__ == "__main__":
     print(lambda_handler())
